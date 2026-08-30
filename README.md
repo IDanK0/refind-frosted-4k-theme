@@ -158,6 +158,24 @@ lightness picks a point on a ramp between a dark and a light version of the hue,
 so the shape and its internal contrast survive while the hue becomes the
 picture's.
 
+A straight ramp is what makes this look faded, and it is worth knowing why. A
+line drawn between a dark colour and a light one passes through their average,
+which is close to grey — so chroma is at its weakest exactly halfway along, and
+halfway along is where a logo sits. The Windows blue lands at 0.60 of the way up
+the ramp and came out at a saturation of 0.17. The ramp's chroma now peaks in
+the middle instead:
+
+```python
+sat = peak * (1 - abs(2 * t - 1) ** bulge)
+```
+
+which puts the same blue at 0.40 without touching its lightness, so the shape and
+its contrast are untouched and only the colour comes back.
+
+The other half of looking faded is lightness: everything was drawn at 0.90, and
+a colour at 90% lightness and 15% saturation is a pastel by definition. Those
+came down too.
+
 How far to push it is not a matter of taste alone: scaling saturation purely in
 proportion to the photograph's leaves a muted picture with a theme
 indistinguishable from grey, which is not what asking for the picture's colour
