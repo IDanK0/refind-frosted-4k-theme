@@ -61,7 +61,8 @@ photo is dimmed before they are composited on top.
 ```
 
 **Automatic** measures the mean luminance of the strip the tiles sit on and
-dims until it reaches **30** — the level the original Mojave photograph sat at.
+dims until it reaches **30**, which is where the photograph this theme was first
+built around happened to sit.
 Below 5% it does nothing, because a few percent changes nothing and is not
 worth touching the photo for.
 
