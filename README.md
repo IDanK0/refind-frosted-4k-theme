@@ -140,6 +140,11 @@ password once, through polkit.
 `./install-launcher.sh` puts it in the applications menu, so it is one click
 away and no terminal is ever needed.
 
+![The picker](screenshots/gui.png)
+
+*Shown in Italian, because that is the language of the machine it was taken on —
+the interface follows whatever the system is set to.*
+
 The interface follows the system language through gettext. English and Italian
 are included; adding another means copying `po/it.po` and translating its 21
 strings, then `msgfmt -o locale/<lang>/LC_MESSAGES/refind-background.mo`.
