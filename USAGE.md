@@ -144,6 +144,12 @@ size of the frosted plate baked into every icon. If you change them, run
 `./build.py` so the icons, the selection highlight and the glass stencil are
 redrawn to match.
 
+The picker's **Match colours to the photo** switch draws the logos, the names,
+the glass, the tool glyphs and the spinner in a hue read out of the photograph
+itself, worked out from the picture rather than looked up, so a photo of your own
+gets its own palette. Turning it off puts Windows back to blue and Ubuntu back to
+orange. From the command line it is `--tint 0` to `--tint 100`.
+
 `animations` (true) makes the menu arrive, the selection fade across and the
 chosen tile travel to the middle instead of jumping. All of it stops the moment a
 keystroke is waiting, so holding an arrow key is as fast as it ever was; `false`

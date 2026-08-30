@@ -75,5 +75,6 @@
       "suggested_blur": 4
     }
   ],
-  "default_blur": 0
+  "default_blur": 0,
+  "default_tint": 100
 }

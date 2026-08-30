@@ -117,6 +117,15 @@ class Window(Adw.ApplicationWindow):
         self.scale.set_value(0 if str(d) == "auto" else int(d))
         self.manual_row.add_suffix(self.scale)
         group.add(self.manual_row)
+
+        row = Adw.ActionRow(
+            title=_("Match colours to the photo"),
+            subtitle=_("Draw the logos, labels and glass in the picture's own colour, "
+                       "instead of Windows blue and Ubuntu orange"))
+        self.tint = Gtk.Switch(active=int(self.cfg.get("default_tint", 100)) > 0,
+                               valign=Gtk.Align.CENTER)
+        row.add_suffix(self.tint); row.set_activatable_widget(self.tint)
+        group.add(row)
         bar.append(group)
 
         actions = Gtk.Box(spacing=10, halign=Gtk.Align.END)
@@ -199,6 +208,7 @@ class Window(Adw.ApplicationWindow):
             return
         entry = self.entries[self.selected]
         darken = "auto" if self.auto.get_active() else int(self.scale.get_value())
+        tint   = 100 if self.tint.get_active() else 0
         self.busy = True
         self.b_prev.set_sensitive(False); self.b_apply.set_sensitive(False)
         self.spinner.start()
@@ -208,7 +218,7 @@ class Window(Adw.ApplicationWindow):
             try:
                 tmp = tempfile.mkdtemp(prefix="refind-bg-")
                 preview = os.path.join(tmp, "preview.png")
-                B.build(entry["path"], darken, tmp, preview, quiet=True)
+                B.build(entry["path"], darken, tmp, preview, quiet=True, tint=tint)
                 GLib.idle_add(self.built, tmp, preview, install, None)
             except Exception as exc:
                 GLib.idle_add(self.built, None, None, install, str(exc))

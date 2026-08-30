@@ -19,11 +19,11 @@ from PIL import Image, ImageDraw
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from build import (apply_frost, W, H, TILE, TILE1, XSP, YSP, ICON_OFF,
-                   PLATE_X, PLATE_Y, PLATE, BIG, R0Y, FROST, SS)
+                   PLATE_X, PLATE_Y, PLATE, BIG, R0Y, FROST, SS, DOT_PX)
 
 NAME    = "refind-frosted"
 NDOTS   = 6            # Windows uses five; six closes the ring more evenly
-DOT     = 20           # dot diameter at 3840x2160
+DOT     = DOT_PX       # one dot, at 3840x2160; build.py draws it
 RING    = 110          # radius of the circle the dots travel
 PERIOD  = 1.8          # seconds for one turn
 STAGGER = 0.100        # fraction of a period between one dot and the next
@@ -91,8 +91,15 @@ def still(assets, icon_path):
     return c.convert("RGB")
 
 
-def dot():
-    """One white dot, drawn large and shrunk so the edge is clean."""
+def dot(assets=None):
+    """The dot the spinner is made of.
+
+    build.py writes it, because its colour is drawn from the photograph like
+    every other colour in the theme. A white one drawn here would be the one
+    thing on the screen that did not come from the picture."""
+    path = os.path.join(assets or os.path.join(HERE, "assets"), "dot.png")
+    if os.path.exists(path):
+        return Image.open(path).convert("RGBA")
     d = Image.new("RGBA", (DOT * SS, DOT * SS), (0, 0, 0, 0))
     ImageDraw.Draw(d).ellipse([0, 0, DOT * SS - 1, DOT * SS - 1], fill=(255, 255, 255, 255))
     return d.resize((DOT, DOT), Image.LANCZOS)
@@ -312,7 +319,7 @@ def main():
     _, _, _, cy = layout(Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS))
     still(args.assets, icon_path).save(os.path.join(args.out, "background.png"),
                                        "PNG", optimize=True)
-    dot().save(os.path.join(args.out, "dot.png"))
+    dot(args.assets).save(os.path.join(args.out, "dot.png"))
     open(os.path.join(args.out, f"{NAME}.script"), "w").write(
         SCRIPT.format(NAME=NAME, NDOTS=NDOTS, PERIOD=PERIOD, STAGGER=STAGGER,
                       SWING=SWING, RING=RING, DOT=DOT, H=H, CY=cy))
