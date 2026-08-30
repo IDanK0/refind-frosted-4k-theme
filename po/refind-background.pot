@@ -6,10 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: refind-background 1.0\n"
-"Report-Msgid-Bugs-To: https://github.com/IDanK0/refind-frosted/"
-"issues\n"
-"POT-Creation-Date: 2026-08-30 17:13+0200\n"
+"Project-Id-Version: refind-background\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-31 00:22+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -46,62 +45,72 @@ msgstr ""
 msgid "Dim by"
 msgstr ""
 
+#: background-gui.py:122
+msgid "Match colours to the photo"
+msgstr ""
+
 #: background-gui.py:123
+msgid ""
+"Draw the logos, labels and glass in the picture's own colour, instead of "
+"Windows blue and Ubuntu orange"
+msgstr ""
+
+#: background-gui.py:132
 msgid "Preview"
 msgstr ""
 
-#: background-gui.py:125
+#: background-gui.py:134
 msgid "Apply"
 msgstr ""
 
-#: background-gui.py:154
+#: background-gui.py:163
 #, python-brace-format
 msgid "auto {0}%"
 msgstr ""
 
-#: background-gui.py:155
+#: background-gui.py:164
 msgid "no dimming needed"
 msgstr ""
 
-#: background-gui.py:176
+#: background-gui.py:185
 msgid "Choose a photo"
 msgstr ""
 
-#: background-gui.py:177
+#: background-gui.py:186
 msgid "Images"
 msgstr ""
 
-#: background-gui.py:194
+#: background-gui.py:203
 #, python-brace-format
 msgid "Added: {0}"
 msgstr ""
 
-#: background-gui.py:205
+#: background-gui.py:215
 msgid "Rendering…  (about ten seconds)"
 msgstr ""
 
-#: background-gui.py:219
+#: background-gui.py:229
 #, python-brace-format
 msgid "Failed: {0}"
 msgstr ""
 
-#: background-gui.py:222
+#: background-gui.py:232
 msgid "Preview opened — nothing was installed"
 msgstr ""
 
-#: background-gui.py:223
+#: background-gui.py:233
 msgid "Installing…  (you will be asked for your password)"
 msgstr ""
 
-#: background-gui.py:237
+#: background-gui.py:247
 #, python-brace-format
 msgid "Install failed: {0}"
 msgstr ""
 
-#: background-gui.py:237
+#: background-gui.py:247
 msgid "cancelled"
 msgstr ""
 
-#: background-gui.py:242
+#: background-gui.py:252
 msgid "Done — reboot to see the new background"
 msgstr ""

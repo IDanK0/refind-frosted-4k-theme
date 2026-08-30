@@ -130,6 +130,39 @@ fixes any of them.
 
 ---
 
+## One colour, taken from the photograph
+
+Everything on the screen is drawn in a hue read out of the picture behind it:
+the glass, the logos, the names under them, the tool glyphs, the line of text at
+the bottom, the dots of the spinner. Nothing is a colour the photograph does not
+contain, and nothing is written down anywhere — point it at a photo of your own
+and it works out its own palette.
+
+Averaging colour is where this usually goes wrong. A plain mean of the pixels
+turns to grey, because opposite hues cancel. So the hues are averaged as points
+on a circle:
+
+```python
+a = h * 2 * math.pi
+x += math.cos(a) * w
+y += math.sin(a) * w
+```
+
+weighted by how colourful and how bright each pixel is, which lets a small
+bright sky decide the answer over a large dark dune — which is what the eye does
+too. On the default photograph that comes out at hue 341° with 33% saturation,
+and every colour in the theme is then a saturation and a lightness away from it.
+
+A logo is not washed over with that colour, which would flatten it. Its own
+lightness picks a point on a ramp between a dark and a light version of the hue,
+so the shape and its internal contrast survive while the hue becomes the
+picture's. Windows blue lands on (169, 150, 156) against this photograph.
+
+`--tint 0` puts Windows back to blue and Ubuntu back to orange, and the picker
+has a switch for it.
+
+---
+
 ## Things move
 
 ![The menu arriving](screenshots/anim-in.gif)

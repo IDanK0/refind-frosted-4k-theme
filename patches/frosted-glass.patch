@@ -217,8 +217,8 @@ diff -ruN a/Make.common b/Make.common
 I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -ruN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-08-31 00:07:11.901330527 +0200
-@@ -800,6 +800,25 @@
++++ b/refind/config.c	2026-08-31 00:20:55.626064001 +0200
+@@ -800,6 +800,28 @@
                  }
              } // for (graphics_on tokens)
  
@@ -226,6 +226,9 @@ diff -ruN a/refind/config.c b/refind/config.c
 +            HandleInt(TokenList, TokenCount, &(GlobalConfig.FrostRadius));
 +            if (GlobalConfig.FrostRadius > 200)
 +                GlobalConfig.FrostRadius = 200;
++
++        } else if (MyStriCmp(TokenList[0], L"handoff_dot")) {
++            HandleString(TokenList, TokenCount, &(GlobalConfig.HandoffDotFileName));
 +
 +        } else if (MyStriCmp(TokenList[0], L"animations")) {
 +            GlobalConfig.Animations = HandleBoolean(TokenList, TokenCount);
@@ -246,8 +249,8 @@ diff -ruN a/refind/config.c b/refind/config.c
  
 diff -ruN a/refind/global.h b/refind/global.h
 --- a/refind/global.h	2024-04-04 21:48:57.000000000 +0200
-+++ b/refind/global.h	2026-08-31 00:07:11.901215252 +0200
-@@ -393,6 +393,13 @@
++++ b/refind/global.h	2026-08-31 00:20:55.625943865 +0200
+@@ -393,6 +393,14 @@
     UINT32_LIST      *CsrValues;
     UINTN            ShowTools[NUM_TOOLS];
     CHAR8            ScanFor[NUM_SCAN_OPTIONS]; // codes of types of loaders for which to scan
@@ -256,6 +259,7 @@ diff -ruN a/refind/global.h b/refind/global.h
 +   UINTN            FrostRadius;
 +   UINTN            HandoffSplash;
 +   BOOLEAN          Animations;
++   CHAR16           *HandoffDotFileName;
 +   CHAR16           *FrostMaskBigFileName;
 +   CHAR16           *FrostMaskSmallFileName;
  } REFIT_CONFIG;
@@ -282,7 +286,7 @@ diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
      StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
 diff -ruN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-31 00:08:13.048849541 +0200
++++ b/refind/menu.c	2026-08-31 00:20:55.626217471 +0200
 @@ -97,6 +97,7 @@
  #define TILE_YSPACING (16)
  
@@ -592,7 +596,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1381,269 @@
+@@ -1174,6 +1381,280 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -649,6 +653,8 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +
 +// A white disc with a soft edge, drawn by counting how much of each pixel the
 +// circle covers. Sixteen samples is plenty at this size and needs no filtering.
++// Only used when the theme supplies no dot of its own: a theme that takes its
++// colours from a photograph wants a dot of that colour, not a white one.
 +static EG_IMAGE * MakeDot(UINTN Size) {
 +    EG_IMAGE *Image;
 +    UINTN     x, y, sx, sy, Hits, i;
@@ -771,7 +777,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +// dots turning underneath, and then get out of the way. Icon is the entry's own
 +// image, so this is correct for a system nobody has installed yet.
 +VOID ShowHandoffSplash(IN EG_IMAGE *Icon) {
-+    EG_IMAGE *Tile, *Dot, *Band;
++    EG_IMAGE *Tile, *Dot, *Band, *Loaded;
 +    UINTN     Elapsed = 0, Ring, DotSize, Span, TileX, BandX, BandY, d;
 +    INTN      Theta, Angle, TileY, CentreY, GroupTop, GroupBottom, Shift;
 +
@@ -829,7 +835,16 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +    Span  = 2 * (Ring + DotSize);
 +    BandX = (UGAWidth / 2) - Ring - DotSize;
 +    BandY = (UINTN) CentreY - Ring - DotSize;
-+    Dot = MakeDot(DotSize);
++    Dot = NULL;
++    if (GlobalConfig.HandoffDotFileName != NULL) {
++        Loaded = egLoadImage(SelfDir, GlobalConfig.HandoffDotFileName, TRUE);
++        if (Loaded != NULL) {
++            Dot = egScaleImage(Loaded, DotSize, DotSize);
++            egFreeImage(Loaded);
++        }
++    }
++    if (Dot == NULL)
++        Dot = MakeDot(DotSize);
 +
 +    if ((Dot != NULL) && (BandY + Span <= UGAHeight)) {
 +        while (Elapsed < GlobalConfig.HandoffSplash) {
@@ -862,7 +877,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1657,7 @@
+@@ -1187,7 +1668,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
