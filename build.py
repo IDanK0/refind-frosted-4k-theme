@@ -161,15 +161,27 @@ def accent(im):
 # photograph with a theme indistinguishable from grey, which is not what asking
 # for the picture's colour means. The ceiling stops a vivid one shouting.
 TONE = {
-    "plate": (0.35, 0.08, 0.20, 0.93),   # the panel's own tint
-    "dark":  (0.90, 0.30, 0.60, 0.22),   # the dark end of a logo's ramp
-    "light": (0.45, 0.10, 0.26, 0.90),   # the light end, and the border, and the names
-    "glyph": (0.45, 0.10, 0.26, 0.90),   # the tool row
-    "text":  (0.45, 0.10, 0.26, 0.63),   # the line rEFInd writes at the bottom
+    "plate": (0.45, 0.10, 0.24, 0.90),   # the panel's own tint
+    "dark":  (0.90, 0.30, 0.60, 0.20),   # unused since the ramp took over
+    "light": (0.60, 0.14, 0.32, 0.86),   # the border, the names, the tool glyphs
+    "glyph": (0.60, 0.14, 0.32, 0.86),
+    "text":  (0.60, 0.14, 0.32, 0.62),   # the line rEFInd writes at the bottom
 }
-# Chosen by rendering the menu at three strengths and looking: weaker and the
-# border is indistinguishable from white, stronger and it reads as a pink theme
-# rather than as a theme that belongs to the photograph.
+# Two things make a palette look faded, and both were happening. Everything was
+# drawn at a lightness of 0.9 with a saturation near 0.15, which is the
+# definition of a pastel; and a logo laid on a straight ramp from a dark colour
+# to a light one loses its chroma exactly in the middle, which is where a logo
+# sits. Lowering the lightness and letting the chroma peak (see LOGO_RAMP) puts
+# the colour back without turning the theme pink: chosen by rendering the menu
+# at three densities and looking.
+# The ramp a logo is laid along: (chroma at the peak, how broad the peak is,
+# lightness at the dark end, at the light end). The chroma has to peak in the
+# middle rather than run straight from a dark colour to a light one, because a
+# straight line between two colours passes through their average -- which is
+# nearly grey -- and a logo sits in the middle of its own range, exactly where
+# that happens. The Windows blue lands at 0.60 of the way up; a straight ramp
+# gives it a saturation of 0.17, this gives it 0.43.
+LOGO_RAMP  = (0.52, 1.4, 0.18, 0.86)
 GREY_PHOTO = 0.04       # below this the picture has no colour to lend
 
 
@@ -194,25 +206,36 @@ def shades(im, strength=1.0):
     for part, (sf, lo, hi, v) in TONE.items():
         c = colorsys.hsv_to_rgb(h, max(lo, min(s * sf, hi)), v)
         out[part] = mix(NEUTRAL[part], tuple(int(x * 255) for x in c))
+    peak, bulge, v_dark, v_light = LOGO_RAMP
+    out["ramp"] = ramp(h, max(0.18, min(s * 1.4, peak)), bulge, v_dark, v_light)
     return out
 
 
-def duotone(img, dark, light, strength):
-    """Re-lay a logo along a ramp between two colours, keeping its shape.
+def ramp(h, peak, bulge, v_dark, v_light):
+    """256 colours from dark to light in one hue, chroma fullest in the middle."""
+    table = []
+    for i in range(256):
+        t = i / 255
+        sat = peak * (1 - abs(2 * t - 1) ** bulge)
+        val = v_dark + (v_light - v_dark) * t
+        table.append(tuple(int(c * 255) for c in colorsys.hsv_to_rgb(h, sat, val)))
+    return table
+
+
+def duotone(img, table, strength):
+    """Re-lay a logo along a ramp, keeping its shape.
 
     Not a wash of colour over the top: the logo's own lightness picks the point
     on the ramp, so the shape and its internal contrast survive while the hue
     becomes the photograph's. Strength mixes it back with the original, so 0
     leaves Windows blue and Ubuntu orange exactly as they are."""
-    if strength <= 0:
+    if strength <= 0 or table is None:
         return img
     r, g, b, a = img.split()
     rgb = Image.merge("RGB", (r, g, b))
     lum = rgb.convert("L")
-    ramp = Image.merge("RGB", [
-        lum.point([int(dark[c] + (light[c] - dark[c]) * i / 255) for i in range(256)])
-        for c in range(3)])
-    out = Image.blend(rgb, ramp, min(1.0, strength))
+    laid = Image.merge("RGB", [lum.point([table[i][c] for i in range(256)]) for c in range(3)])
+    out = Image.blend(rgb, laid, min(1.0, strength))
     out.putalpha(a)
     return out
 
@@ -282,7 +305,7 @@ def make_icon(plate_img, name, drawer=None, stock=None, tone=None, label=(255, 2
     inner = (aa(LOGO, drawer) if drawer else
              Image.open(stock).convert("RGBA").resize((LOGO, LOGO), Image.LANCZOS))
     if tone:
-        inner = duotone(inner, tone[0], tone[1], tone[2])
+        inner = duotone(inner, tone[0], tone[1])
     t.alpha_composite(inner, ((BIG - LOGO) // 2, PLATE_Y + (PLATE - LOGO) // 2))
     if name:
         d = ImageDraw.Draw(t)
@@ -359,7 +382,7 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     fi.save(f"{out}/font.png")
     say(f"  font       cell {cw}x{ch}, written {ink} -> {tuple(C['text'])} on screen")
 
-    tone = (C["dark"], C["light"], tint / 100.0)
+    tone = (C.get("ramp"), tint / 100.0)
     pl = plate(PLATE, C["plate"], C["light"])
     for stem, name, drawer in (("os_win8", "Windows", logo_windows),
                                ("os_win",  "Windows", logo_windows),
