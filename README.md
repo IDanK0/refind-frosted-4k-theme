@@ -89,6 +89,16 @@ the tint arrives with the icon that is composited next. Measured on a
 detailed photograph, `detail` inside the panel falls from 8.53 to 1.86 while
 one pixel outside it stays at 7.97, unchanged.
 
+**What makes it read as glass is not the blur.** On a dark, smooth photograph
+there is nothing behind the pane to soften, so the frost has nothing to show;
+and a drop shadow cannot darken a background that is already almost black. Both
+of the obvious cues do nothing there. What does the work is light *on* the
+surface — a reflection lying diagonally across the pane, a hairline just inside
+the top edge where a bevel would catch it, and a crisp rim — none of which
+depend on what is behind at all. Turning those on and taking the pane's own body
+down from 36 to 24 is the difference between a pane and a rounded rectangle. The
+blur still matters, but only on a photograph with something in it to blur.
+
 **The glass has to be weak to read as glass.** Blur and tint compound: a wide
 blur averages the whole panel to one colour and the tint then covers what little
 is left, so the photograph disappears and a pale rectangle is all that remains.
