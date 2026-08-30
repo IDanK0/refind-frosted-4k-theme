@@ -1,120 +1,64 @@
 # Usage
 
-Everything lives in the directory you cloned. The graphical way needs no
-terminal at all; the command line is there if you prefer it.
+Everything the look depends on can be changed from the boot menu itself. The
+scripts in this directory regenerate the artwork; nothing about choosing a
+background needs an operating system to be running.
 
 ---
 
-## The easy way
+## From the boot menu
 
-Run `./install-launcher.sh` once. **Boot Menu Background** then appears in the
-applications menu — search for it and click.
+Pick **Settings** in the tool row.
 
-The window shows every option as a thumbnail, already composited into the theme
-so you see what it will actually look like:
+| | |
+|---|---|
+| **Background** | every picture in `EFI/refind/backgrounds`, in turn |
+| **Dimming** | automatic, or 0–80% by hand |
+| **Frosted glass** | 0–32, how far the glass scatters what is behind it |
+| **Colour from photo** | 0–100%, how far the logos and labels move towards the picture's own colour |
+| **Animations** | on or off |
+| **Save these for next time** | writes `EFI/refind/theme.conf` |
 
-- the **+** button in the header brings in a photo of your own
-- **Automatic dimming** is on by default; turn it off to use the slider
-- **Preview** renders a full-screen image and opens it, touching nothing
-- **Apply** installs, asking for your password once through the system dialog
+Every change takes effect the moment you make it — press Esc and the menu is
+already wearing it. Only *Save* makes it survive a reboot.
 
-The interface follows your system language. English and Italian ship with it;
-adding another is a matter of copying `po/it.po` and translating 21 strings.
+`theme.conf` is read last by `refind.conf`, so it overrides everything;
+**deleting it brings the machine back to exactly what was installed.**
+
+## Adding a photograph of your own
+
+Copy it into `EFI/refind/backgrounds` on the EFI partition. PNG, JPEG or BMP.
+That is the whole procedure, and it works from anything that can see the
+partition — Linux, Windows, a live USB, some firmware file managers.
+
+It will be themed like the ones that shipped: rEFInd reads the colours off the
+picture at boot, so there is nothing to generate and nothing to install.
+
+```bash
+sudo mount /dev/nvme0n1p1 /mnt          # if it is not mounted already
+sudo cp ~/Pictures/mine.jpg /mnt/EFI/refind/backgrounds/
+```
 
 ---
 
-## From the command line
+## From the command line, to change the shapes
+
+The artwork — the glass, the plates, the forty-seven themed logos, the font, the
+spinner's dot — is drawn ahead of time. Its *colours* are not: those come off the
+photograph at boot. So these regenerate shapes, not palettes.
 
 ```bash
-./background.py                   # browse the library and choose
-./background.py 3                 # by number
-./background.py desert-skies      # by name
-./background.py --list            # just list, open nothing
+./build.py                                   # redraw everything
+./build.py --background ~/Pictures/mine.jpg  # preview against a photo of yours
+./build.py --tint 0                          # preview with the original colours
+sudo ./install-assets.sh assets              # copy to the EFI partition
 ```
 
-### Your own photo
-
-```bash
-./background.py ~/Pictures/holiday.jpg
-```
-
-Or add it to the library so it stays there and shows up in the list:
-
-```bash
-cp ~/Pictures/holiday.jpg library/custom/
-./background.py
-```
-
-Any size, any aspect ratio: it is centre-cropped to 16:9 and scaled to
-3840x2160. Accepts jpg, png, webp, bmp.
-
-### Dimming
-
-The frosted tiles and the white labels need a reasonably dark backdrop, so the
-photo is dimmed before they are composited on top.
-
-```bash
-./background.py 3                 # automatic — the default
-./background.py --darken 0 3      # exactly as shot, no dimming
-./background.py --darken 45 3     # dim by 45%
-./background.py --darken 100 3    # black
-```
-
-**Automatic** measures the mean luminance of the strip the tiles sit on and
-dims until it reaches **30**, which is where the photograph this theme was first
-built around happened to sit.
-Below 5% it does nothing, because a few percent changes nothing and is not
-worth touching the photo for.
-
-`--list` reports what each photo measures and what automatic would choose:
-
-```
-1. Mars Over Dunes
-   Public domain  ·  luminance behind the tiles 31  ·  dark enough as it is
-3. Desert Skies
-   CC0  ·  luminance behind the tiles 107  ·  suggested --darken 72
-```
-
-To change the default, edit `library/library.json`:
-
-```json
-"default_darken": "auto"          →  a number from 0 to 100 if you prefer
-```
-
-### Preview without installing
-
-```bash
-./background.py --preview 5
-```
-
-Writes `preview.png` and opens it. Nothing is installed.
+`install-assets.sh` also copies the library into `EFI/refind/backgrounds`, and
+writes a starting `theme.conf` — but only if there is not one there already, so
+choices made from the boot menu are never overwritten by a reinstall.
 
 ---
-
-## If something goes wrong
-
-Installing always keeps a copy of the previous configuration on the ESP:
-
-```bash
-ls /boot/efi/EFI/refind/refind.conf.bak-*
-sudo cp /boot/efi/EFI/refind/refind.conf.bak-XXXXXX /boot/efi/EFI/refind/refind.conf
-```
-
-And whatever happens, **F12** at power-on opens the firmware's own boot menu and
-lets you start Windows, bypassing everything.
-
----
-
-## New systems and USB sticks
-
-Nothing to do: `scanfor internal,external,optical,manual` means rEFInd looks at
-what is attached every time it starts. A bootable stick shows up while it is
-plugged in and disappears when it is not. A system installed on another disk
-shows up with the right icon and its own name, because all 47 of rEFInd's stock
-OS icons have been themed and labelled in advance.
-
-Five entries fit before rEFInd starts scrolling
-(`MaxVisible = 3840/(617+8) - 1`).
 
 ## The splash
 

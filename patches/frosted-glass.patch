@@ -217,8 +217,17 @@ diff -ruN a/Make.common b/Make.common
 I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -ruN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-08-31 00:20:55.626064001 +0200
-@@ -800,6 +800,28 @@
++++ b/refind/config.c	2026-08-31 01:39:35.978478870 +0200
+@@ -695,6 +695,8 @@
+                    GlobalConfig.ShowTools[i - 1] = TAG_WINDOWS_RECOVERY;
+                 } else if (MyStriCmp(FlagName, L"mok_tool")) {
+                    GlobalConfig.ShowTools[i - 1] = TAG_MOK_TOOL;
++                } else if (MyStriCmp(FlagName, L"settings")) {
++                   GlobalConfig.ShowTools[i - 1] = TAG_SETTINGS;
+                 } else if (MyStriCmp(FlagName, L"fwupdate")) {
+                    GlobalConfig.ShowTools[i - 1] = TAG_FWUPDATE_TOOL;
+                 } else if (MyStriCmp(FlagName, L"csr_rotate")) {
+@@ -800,6 +802,41 @@
                  }
              } // for (graphics_on tokens)
  
@@ -226,6 +235,19 @@ diff -ruN a/refind/config.c b/refind/config.c
 +            HandleInt(TokenList, TokenCount, &(GlobalConfig.FrostRadius));
 +            if (GlobalConfig.FrostRadius > 200)
 +                GlobalConfig.FrostRadius = 200;
++
++        } else if (MyStriCmp(TokenList[0], L"background")) {
++            HandleString(TokenList, TokenCount, &(GlobalConfig.BackgroundFile));
++
++        } else if (MyStriCmp(TokenList[0], L"darken")) {
++            HandleInt(TokenList, TokenCount, &(GlobalConfig.Darken));
++            if (GlobalConfig.Darken > 101)
++                GlobalConfig.Darken = 101;
++
++        } else if (MyStriCmp(TokenList[0], L"tint")) {
++            HandleInt(TokenList, TokenCount, &(GlobalConfig.Tint));
++            if (GlobalConfig.Tint > 100)
++                GlobalConfig.Tint = 100;
 +
 +        } else if (MyStriCmp(TokenList[0], L"handoff_dot")) {
 +            HandleString(TokenList, TokenCount, &(GlobalConfig.HandoffDotFileName));
@@ -249,8 +271,16 @@ diff -ruN a/refind/config.c b/refind/config.c
  
 diff -ruN a/refind/global.h b/refind/global.h
 --- a/refind/global.h	2024-04-04 21:48:57.000000000 +0200
-+++ b/refind/global.h	2026-08-31 00:20:55.625943865 +0200
-@@ -393,6 +393,14 @@
++++ b/refind/global.h	2026-08-31 01:39:35.978377528 +0200
+@@ -79,6 +79,7 @@
+ #define TAG_HIDDEN           (21)
+ #define TAG_INSTALL          (22)
+ #define TAG_BOOTORDER        (23)
++#define TAG_SETTINGS         (24)
+ #define NUM_TOOLS            (24)
+ 
+ #define NUM_SCAN_OPTIONS 11
+@@ -393,6 +394,17 @@
     UINT32_LIST      *CsrValues;
     UINTN            ShowTools[NUM_TOOLS];
     CHAR8            ScanFor[NUM_SCAN_OPTIONS]; // codes of types of loaders for which to scan
@@ -260,6 +290,9 @@ diff -ruN a/refind/global.h b/refind/global.h
 +   UINTN            HandoffSplash;
 +   BOOLEAN          Animations;
 +   CHAR16           *HandoffDotFileName;
++   CHAR16           *BackgroundFile;   // inside EFI\\refind\\backgrounds
++   UINTN            Darken;            // 0-100, or 101 for automatic
++   UINTN            Tint;              // 0-100, how far towards the photograph
 +   CHAR16           *FrostMaskBigFileName;
 +   CHAR16           *FrostMaskSmallFileName;
  } REFIT_CONFIG;
@@ -284,18 +317,115 @@ diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
      BeginExternalScreen(Entry->UseGraphicsMode, L"Booting OS");
      StoreLoaderName(SelectionName);
      StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
+diff -ruN a/refind/main.c b/refind/main.c
+--- a/refind/main.c	2024-04-06 19:23:18.000000000 +0200
++++ b/refind/main.c	2026-08-31 01:41:13.675872955 +0200
+@@ -70,6 +70,7 @@
+ #include "driver_support.h"
+ #include "launch_efi.h"
+ #include "scan.h"
++#include "theme.h"
+ #include "log.h"
+ #include "../include/refit_call_wrapper.h"
+ #include "../include/version.h"
+@@ -152,8 +153,8 @@
+                               /* *SpoofOSXVersion = */ NULL,
+                               /* CsrValues = */ NULL,
+                               /* ShowTools = */ { TAG_SHELL, TAG_MEMTEST, TAG_GDISK, TAG_APPLE_RECOVERY, TAG_WINDOWS_RECOVERY,
+-                                                  TAG_MOK_TOOL, TAG_ABOUT, TAG_HIDDEN, TAG_SHUTDOWN, TAG_REBOOT, TAG_FIRMWARE,
+-                                                  TAG_FWUPDATE_TOOL, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
++                                                  TAG_MOK_TOOL, TAG_SETTINGS, TAG_ABOUT, TAG_HIDDEN, TAG_SHUTDOWN, TAG_REBOOT,
++                                                  TAG_FIRMWARE, TAG_FWUPDATE_TOOL, 0, 0, 0, 0, 0, 0, 0, 0 }
+                             };
+ 
+ CHAR16 *gHiddenTools = NULL;
+@@ -250,6 +251,9 @@
+     SetVolumeIcons();
+     ScanForBootloaders(DisplayMessage);
+     ScanForTools();
++    // The colours come off the photograph, so this has to wait until there
++    // are icons to lay them on.
++    ApplyTheme();
+ } // VOID RescanAll()
+ 
+ #ifdef __MAKEWITH_TIANO
+@@ -525,6 +529,7 @@
+     SetVolumeIcons();
+     ScanForBootloaders(FALSE);
+     ScanForTools();
++    ApplyTheme();
+ 
+     // SetupScreen() clears the screen; but ScanForBootloaders() may display a
+     // message that must be deleted, so do so
+@@ -608,6 +613,10 @@
+                 ManageHiddenTags();
+                 break;
+ 
++            case TAG_SETTINGS:  // Background, dimming, glass, colour, animation
++                ShowSettingsMenu();
++                break;
++
+             case TAG_EXIT:    // Terminate rEFInd
+                 if ((MokProtocol) && !SecureBootUninstall()) {
+                    MainLoopRunning = FALSE;   // just in case we get this far
+diff -ruN a/refind/Makefile b/refind/Makefile
+--- a/refind/Makefile	2024-04-06 16:20:34.000000000 +0200
++++ b/refind/Makefile	2026-08-31 01:35:33.288700944 +0200
+@@ -36,7 +36,7 @@
+                   -L$(SRCDIR)/../EfiLib/ -L$(SRCDIR)/../gzip
+ LOCAL_LIBS      = -leg -lmok -lEfiLib -lgzip
+ 
+-OBJS            = apple.o config.o crc32.o driver_support.o gpt.o icns.o \
++OBJS            = apple.o config.o crc32.o driver_support.o gpt.o icns.o theme.o \
+                   install.o launch_efi.o launch_legacy.o lib.o line_edit.o \
+                   linux.o log.o main.o menu.o mystrings.o pointer.o scan.o \
+                   screen.o
 diff -ruN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-31 00:20:55.626217471 +0200
-@@ -97,6 +97,7 @@
++++ b/refind/menu.c	2026-08-31 01:41:57.808610544 +0200
+@@ -59,6 +59,7 @@
+ #include "screen.h"
+ #include "lib.h"
+ #include "log.h"
++#include "theme.h"
+ #include "menu.h"
+ #include "config.h"
+ #include "libeg.h"
+@@ -97,6 +98,33 @@
  #define TILE_YSPACING (16)
  
  static EG_IMAGE *SelectionImages[2] = { NULL, NULL };
 +static EG_IMAGE *FrostImages[2] = { NULL, NULL };
++
++// Replace an image with its tinted self. The frost stencils are left alone:
++// their alpha is a shape, and a shape has no colour to match.
++static VOID TintInPlace(EG_IMAGE **Slot) {
++    EG_IMAGE *Tinted;
++
++    if ((Slot == NULL) || (*Slot == NULL) || (GlobalConfig.Tint == 0))
++        return;
++    Tinted = ThemeTint(*Slot);
++    if (Tinted != NULL) {
++        egFreeImage(*Slot);
++        *Slot = Tinted;
++    }
++}
++
++// Let go of everything whose colour came from the photograph, so the next
++// repaint loads it again and tints it from the new one.
++VOID ResetTheming(VOID) {
++    UINTN i;
++
++    for (i = 0; i < 2; i++) {
++        egFreeImage(SelectionImages[i]); SelectionImages[i] = NULL;
++        egFreeImage(FrostImages[i]);     FrostImages[i] = NULL;
++    }
++    ResetBanner();      // which also marks the screen for a repaint
++} // VOID ResetTheming()
  static EG_PIXEL SelectionBackgroundPixel = { 0xff, 0xff, 0xff, 0 };
  
  EFI_EVENT* WaitList = NULL;
-@@ -118,7 +119,7 @@
+@@ -118,7 +146,7 @@
  
  static VOID InitSelection(VOID)
  {
@@ -304,10 +434,20 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      BOOLEAN     LoadedSmallImage = FALSE;
  
      if (!AllowGraphicsMode)
-@@ -150,6 +151,27 @@
+@@ -135,6 +163,7 @@
+     else
+         LoadedSmallImage = TRUE;
+     SelectionImages[1] = egScaleImage(TempSmallImage, TileSizes[1], TileSizes[1]);
++    TintInPlace(&SelectionImages[1]);
+ 
+     // load big selection image
+     if (GlobalConfig.SelectionBigFileName != NULL) {
+@@ -149,6 +178,28 @@
+         }
      }
      SelectionImages[0] = egScaleImage(TempBigImage, TileSizes[0], TileSizes[0]);
- 
++    TintInPlace(&SelectionImages[0]);
++
 +    // Load the frosted-glass stencils. These are scaled to the *icon* size, not
 +    // the tile size, because egFrostImage() centres them the way
 +    // BltImageCompositeBadge() centres the icon -- so a stencil drawn against
@@ -328,11 +468,10 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +            egFreeImage(TempFrostImage);
 +        }
 +    }
-+
+ 
      if (TempSmallImage)
          egFreeImage(TempSmallImage);
-     if (TempBigImage)
-@@ -857,7 +879,7 @@
+@@ -857,7 +908,7 @@
  
          // render the text
          egRenderText(Text, TextBuffer, egGetFontCellWidth(), TEXT_YMARGIN, (Bg.r + Bg.g + Bg.b) / 3);
@@ -341,7 +480,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
          egFreeImage(TextBuffer);
      }
  } /* VOID DrawText() */
-@@ -905,7 +927,7 @@
+@@ -905,7 +956,7 @@
  
      // render the text
      egRenderText(Text, TextBuffer, 0, 0, AverageBrightness(TextBuffer));
@@ -350,7 +489,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1096,218 @@
+@@ -1074,31 +1125,218 @@
  // graphical main menu style
  //
  
@@ -583,7 +722,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1359,8 @@
+@@ -1150,10 +1388,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -596,7 +735,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1381,280 @@
+@@ -1174,6 +1410,281 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -841,6 +980,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +        if (Loaded != NULL) {
 +            Dot = egScaleImage(Loaded, DotSize, DotSize);
 +            egFreeImage(Loaded);
++            TintInPlace(&Dot);
 +        }
 +    }
 +    if (Dot == NULL)
@@ -877,7 +1017,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1668,7 @@
+@@ -1187,7 +1698,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -888,19 +1028,28 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  
 diff -ruN a/refind/menu.h b/refind/menu.h
 --- a/refind/menu.h	2024-01-28 19:51:20.000000000 +0100
-+++ b/refind/menu.h	2026-08-30 23:49:15.756866383 +0200
-@@ -131,6 +131,7 @@
++++ b/refind/menu.h	2026-08-31 01:41:13.676180857 +0200
+@@ -131,6 +131,8 @@
  CHAR16* ReadHiddenTags(CHAR16 *VarName);
  UINTN RunMainMenu(IN REFIT_MENU_SCREEN *Screen, IN CHAR16** DefaultSelection, OUT REFIT_MENU_ENTRY **ChosenEntry);
  UINTN FindMainMenuItem(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, IN UINTN PosX, IN UINTN PosY);
 +VOID ShowHandoffSplash(IN EG_IMAGE *Icon);
++VOID ResetTheming(VOID);
  VOID GenerateWaitList();
  UINTN WaitForInput(IN UINTN Timeout);
  
 diff -ruN a/refind/scan.c b/refind/scan.c
 --- a/refind/scan.c	2024-04-04 17:18:11.000000000 +0200
-+++ b/refind/scan.c	2026-08-30 18:45:36.243045920 +0200
-@@ -638,22 +638,45 @@
++++ b/refind/scan.c	2026-08-31 01:40:32.913116668 +0200
+@@ -114,6 +114,7 @@
+ EFI_GUID GlobalGuid = EFI_GLOBAL_VARIABLE;
+ 
+ static REFIT_MENU_ENTRY MenuEntryAbout    = { L"About rEFInd", TAG_ABOUT, 1, 0, 'A', NULL, NULL, NULL };
++static REFIT_MENU_ENTRY MenuEntrySettings = { L"Settings", TAG_SETTINGS, 1, 0, 'S', NULL, NULL, NULL };
+ static REFIT_MENU_ENTRY MenuEntryReset    = { L"Reboot Computer", TAG_REBOOT, 1, 0, 'R', NULL, NULL, NULL };
+ static REFIT_MENU_ENTRY MenuEntryShutdown = { L"Shut Down Computer", TAG_SHUTDOWN, 1, 0, 'U', NULL, NULL, NULL };
+ static REFIT_MENU_ENTRY MenuEntryRotateCsr = { L"Change SIP Policy", TAG_CSR_ROTATE, 1, 0, 0, NULL, NULL, NULL };
+@@ -638,22 +639,45 @@
  static LOADER_ENTRY * AddLoaderEntry(IN OUT CHAR16 *LoaderPath, IN CHAR16 *LoaderTitle,
                                       IN REFIT_VOLUME *Volume, IN BOOLEAN SubScreenReturn) {
      LOADER_ENTRY  *Entry;
@@ -951,7 +1100,7 @@ diff -ruN a/refind/scan.c b/refind/scan.c
          Entry->me.Row = 0;
          Entry->me.BadgeImage = Volume->VolBadgeImage;
          if ((LoaderPath != NULL) && (LoaderPath[0] != L'\\')) {
-@@ -670,6 +693,7 @@
+@@ -670,6 +694,7 @@
      } else {
          LOG(1, LOG_LINE_NORMAL, L"Unable to initialize loader entry in AddLoaderEntry()!");
      }
@@ -959,7 +1108,7 @@ diff -ruN a/refind/scan.c b/refind/scan.c
  
      return(Entry);
  } // LOADER_ENTRY * AddLoaderEntry()
-@@ -935,6 +959,17 @@
+@@ -935,6 +960,17 @@
                HasSignedCounterpart(Volume, FullName) || /* a file with same name plus ".efi.signed" is present */
                FilenameIn(Volume, Path, DirEntry->FileName, GlobalConfig.DontScanFiles) ||
                !IsValidLoader(Volume->RootDir, FullName)) {
@@ -977,7 +1126,7 @@ diff -ruN a/refind/scan.c b/refind/scan.c
                  continue;   // skip this
            }
  
-@@ -1107,7 +1142,7 @@
+@@ -1107,7 +1143,7 @@
              FileName = StrDuplicate(L"EFI\\Microsoft\\Boot\\bkpbootmgfw.efi");
              if (FileExists(Volume->RootDir, FileName) &&  !FilenameIn(Volume, L"EFI\\Microsoft\\Boot", L"bkpbootmgfw.efi",
                  GlobalConfig.DontScanFiles)) {
@@ -986,7 +1135,7 @@ diff -ruN a/refind/scan.c b/refind/scan.c
                      FoundBRBackup = TRUE;
                      if (DuplicatesFallback(Volume, FileName))
                          ScanFallbackLoader = FALSE;
-@@ -1119,7 +1154,7 @@
+@@ -1119,7 +1155,7 @@
                      if (FoundBRBackup)
                          AddLoaderEntry(FileName, L"Supposed Microsoft EFI boot (probably GRUB)", Volume, TRUE);
                      else
@@ -995,7 +1144,26 @@ diff -ruN a/refind/scan.c b/refind/scan.c
                      if (DuplicatesFallback(Volume, FileName))
                          ScanFallbackLoader = FALSE;
              }
-@@ -1601,7 +1636,11 @@
+@@ -1553,6 +1589,18 @@
+                 AddMenuEntry(&MainMenu, TempMenuEntry);
+                 break;
+ 
++            case TAG_SETTINGS:
++                // The theme's own icon if the theme ships one; rEFInd has no
++                // built-in for this, so the About glyph stands in rather than
++                // leaving a hole in the row.
++                TempMenuEntry = CopyMenuEntry(&MenuEntrySettings);
++                TempMenuEntry->Image = egFindIcon(L"func_settings",
++                                                  GlobalConfig.IconSizes[ICON_SIZE_SMALL]);
++                if (TempMenuEntry->Image == NULL)
++                    TempMenuEntry->Image = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
++                AddMenuEntry(&MainMenu, TempMenuEntry);
++                break;
++
+             case TAG_EXIT:
+                 TempMenuEntry = CopyMenuEntry(&MenuEntryExit);
+                 TempMenuEntry->Image = BuiltinIcon(BUILTIN_ICON_FUNC_EXIT);
+@@ -1601,7 +1649,11 @@
                  break;
  
              case TAG_MOK_TOOL:
@@ -1010,7 +1178,7 @@ diff -ruN a/refind/scan.c b/refind/scan.c
              case TAG_FWUPDATE_TOOL:
 diff -ruN a/refind/screen.c b/refind/screen.c
 --- a/refind/screen.c	2024-03-23 23:21:19.000000000 +0100
-+++ b/refind/screen.c	2026-08-30 23:22:54.399101603 +0200
++++ b/refind/screen.c	2026-08-31 01:41:57.808385799 +0200
 @@ -246,8 +246,19 @@
          UseGraphicsMode = FALSE;
  
@@ -1032,7 +1200,48 @@ diff -ruN a/refind/screen.c b/refind/screen.c
      } else {
          egClearScreen(&DarkBackgroundPixel);
          DrawScreenHeader(Title);
-@@ -577,7 +588,7 @@
+@@ -432,9 +443,28 @@
+         BltClearScreen(TRUE);
+ }
+ 
++// The picture the theme is currently using. When this is set it is the banner,
++// and the file named in refind.conf is not consulted -- that is what lets the
++// settings screen change the background without a reboot.
++EG_IMAGE *ThemeBanner = NULL;
++static EG_IMAGE *Banner = NULL;
++
++// Forget the cached banner, so the next repaint picks up whatever the theme has
++// put in ThemeBanner.
++VOID ResetBanner(VOID) {
++    egFreeImage(Banner);
++    Banner = NULL;
++    GraphicsScreenDirty = TRUE;
++} // VOID ResetBanner()
++
++// GraphicsScreenDirty is private to this file, and stays that way: everything
++// outside says what it means instead of setting a flag.
++VOID MarkScreenDirty(VOID) {
++    GraphicsScreenDirty = TRUE;
++} // VOID MarkScreenDirty()
++
+ VOID BltClearScreen(BOOLEAN ShowBanner)
+ {
+-    static EG_IMAGE *Banner = NULL;
+     EG_IMAGE *NewBanner = NULL;
+     INTN BannerPosX, BannerPosY;
+     EG_PIXEL Black = { 0x0, 0x0, 0x0, 0 };
+@@ -442,7 +472,9 @@
+     if (ShowBanner && !(GlobalConfig.HideUIFlags & HIDEUI_FLAG_BANNER)) {
+         // load banner on first call
+         if (Banner == NULL) {
+-            if (GlobalConfig.BannerFileName)
++            if (ThemeBanner != NULL)
++                Banner = egCopyImage(ThemeBanner);
++            if ((Banner == NULL) && GlobalConfig.BannerFileName)
+                 Banner = egLoadImage(SelfDir, GlobalConfig.BannerFileName, FALSE);
+             if (Banner == NULL)
+                 Banner = egPrepareEmbeddedImage(&egemb_refind_banner, FALSE);
+@@ -577,7 +609,7 @@
       // blit to screen and clean up
       if (CompImage != NULL) {
           if (CompImage->HasAlpha)
@@ -1041,3 +1250,567 @@ diff -ruN a/refind/screen.c b/refind/screen.c
           else
               egDrawImage(CompImage, XPos, YPos);
           egFreeImage(CompImage);
+diff -ruN a/refind/screen.h b/refind/screen.h
+--- a/refind/screen.h	2024-04-04 21:49:43.000000000 +0200
++++ b/refind/screen.h	2026-08-31 01:41:57.808449309 +0200
+@@ -105,6 +105,9 @@
+ 
+ VOID SwitchToGraphicsAndClear(VOID);
+ VOID BltClearScreen(IN BOOLEAN ShowBanner);
++VOID ResetBanner(VOID);
++VOID MarkScreenDirty(VOID);
++extern EG_IMAGE *ThemeBanner;
+ VOID BltImage(IN EG_IMAGE *Image, IN UINTN XPos, IN UINTN YPos);
+ VOID BltImageAlpha(IN EG_IMAGE *Image, IN UINTN XPos, IN UINTN YPos, IN EG_PIXEL *BackgroundPixel);
+ //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
+diff -ruN a/refind/theme.c b/refind/theme.c
+--- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
++++ b/refind/theme.c	2026-08-31 01:41:57.808500345 +0200
+@@ -0,0 +1,519 @@
++/*
++ * refind/theme.c
++ * Choosing and applying the look, from inside the boot menu.
++ *
++ * Everything here used to be done by a Python program on the installed Linux,
++ * which meant the boot menu could only be re-themed from one particular
++ * operating system -- an odd dependency for the thing that starts all of them.
++ * The shapes are still drawn ahead of time, because drawing rounded glass and
++ * compositing forty-seven logos is not work for a bootloader. The colours are
++ * not: they are read off the photograph here, at boot, so a picture dropped into
++ * EFI\refind\backgrounds from anything at all -- including Windows -- is themed
++ * exactly like the ones that shipped.
++ *
++ * There is no floating point in an EFI application, and no trigonometry either.
++ * Neither is needed: see SampleAccent().
++ */
++
++#include "global.h"
++#include "screen.h"
++#include "lib.h"
++#include "menu.h"
++#include "theme.h"
++#include "icns.h"
++#include "mystrings.h"
++#include "log.h"
++#include "../include/refit_call_wrapper.h"
++
++#define BACKGROUND_DIR   L"backgrounds"
++#define THEME_FILE       L"theme.conf"
++#define RAMP_STEPS       (256)
++#define DARKEN_AUTO      (101)
++#define TARGET_LUMINANCE (30)
++
++// The ends of the ramp a logo is laid along, and how much colour it may carry.
++#define RAMP_DARK        (46)
++#define RAMP_LIGHT       (219)
++#define CHROMA_FLOOR     (20)
++#define CHROMA_CEILING   (52)
++
++static EG_PIXEL  Ramp[RAMP_STEPS];
++static BOOLEAN   RampReady = FALSE;
++
++// The artwork exactly as it was loaded. Everything is tinted from these, never
++// from the last tint, so moving a setting back and forth cannot compound.
++static EG_IMAGE  **PristineIcons = NULL;
++static UINTN       PristineCount = 0;
++static EG_IMAGE   *PristineBackground = NULL;
++static CHAR16     *PristineName = NULL;
++
++static INTN AbsI(INTN x) { return (x < 0) ? -x : x; }
++
++static INTN SquareRoot(INTN n) {
++    INTN r = 0, b = 1 << 20;
++
++    while (b > n) b >>= 2;
++    while (b > 0) {
++        if (n >= r + b) { n -= r + b; r = (r >> 1) + b; }
++        else            { r >>= 1; }
++        b >>= 2;
++    }
++    return r;
++}
++
++//
++// The photograph's colour, with no sine anywhere
++//
++// Averaging hues is the whole difficulty: hue is an angle, opposite angles
++// cancel, and a straight mean of them comes out grey. The usual answer is to
++// average points on a circle, which needs trigonometry that an EFI application
++// has no business carrying.
++//
++// It is not needed. Every colour is a grey plus a departure from grey, and that
++// departure lives in the plane at right angles to the grey axis. Averaging the
++// departures IS the circular mean of the hues, written in linear coordinates --
++// so a sum of three integers per pixel replaces the whole of it.
++//
++// Brightness is cubed in the weight. With brightness counting once, a vast dark
++// dune outvotes the small bright sky that the eye actually reads the picture by,
++// and the answer comes out a colour that is nowhere in the photograph.
++//
++static VOID SampleAccent(IN EG_IMAGE *Image, OUT INTN *Dir, OUT INTN *Chroma) {
++    UINTN     x, y, Step;
++    INTN      Ax = 0, Ay = 0, Az = 0, dx, dy, dz, Len;
++    INTN      r, g, b, Hi, Lo, Mid, c, v, w;
++    INT64     Weight = 0, ChromaSum = 0;
++    EG_PIXEL *P;
++
++    Dir[0] = Dir[1] = Dir[2] = 0;
++    *Chroma = 0;
++    if ((Image == NULL) || (Image->Width < 8) || (Image->Height < 8))
++        return;
++
++    // about 60,000 samples whatever the picture's size
++    Step = (Image->Width * Image->Height) / 60000;
++    if (Step < 1)
++        Step = 1;
++
++    for (y = 0; y < Image->Height; y++) {
++        for (x = 0; x < Image->Width; x += Step) {
++            P = &Image->PixelData[y * Image->Width + x];
++            r = P->r; g = P->g; b = P->b;
++            Hi = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
++            Lo = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
++            c = Hi - Lo;
++            v = Hi;
++            if ((c < 6) || (v < 8))
++                continue;
++            // colourful, and bright, with brightness counting for much more
++            w = ((c * c) / 256 + 1) * ((v * v * v) / 65536 + 1);
++            Mid = (r + g + b) / 3;
++            dx = r - Mid; dy = g - Mid; dz = b - Mid;
++            Len = SquareRoot(dx * dx + dy * dy + dz * dz);
++            if (Len < 1)
++                continue;
++            // the direction only: a vivid pixel and a pale one of the same hue
++            // should agree, and it is the weight's job to say which counts more
++            Ax += (dx * 1024 * w) / Len;
++            Ay += (dy * 1024 * w) / Len;
++            Az += (dz * 1024 * w) / Len;
++            Weight += w;
++            ChromaSum += (INT64) c * w;
++        } // for x
++    } // for y
++
++    if (Weight < 1)
++        return;
++    Len = SquareRoot(Ax * Ax + Ay * Ay + Az * Az);
++    if (Len < 1)
++        return;
++    Dir[0] = (Ax * 1024) / Len;
++    Dir[1] = (Ay * 1024) / Len;
++    Dir[2] = (Az * 1024) / Len;
++    *Chroma = (INTN) (ChromaSum / Weight);
++} // VOID SampleAccent()
++
++// The ramp a logo is laid along: dark at the bottom of its own range, light at
++// the top, and the colour fullest in the middle. A straight line between a dark
++// colour and a light one passes through their average, which is close to grey,
++// and the middle of the range is exactly where a logo sits -- so a straight ramp
++// takes the colour out of the one part anybody looks at.
++static VOID BuildRamp(IN INTN *Dir, IN INTN Chroma) {
++    UINTN i;
++    INTN  t, v, peak, u, s, comp, k;
++
++    peak = (Chroma * 45) / 100;
++    if (peak < CHROMA_FLOOR)   peak = CHROMA_FLOOR;
++    if (peak > CHROMA_CEILING) peak = CHROMA_CEILING;
++
++    for (i = 0; i < RAMP_STEPS; i++) {
++        t = (INTN) i;
++        v = RAMP_DARK + ((RAMP_LIGHT - RAMP_DARK) * t) / 255;
++        u = 255 - AbsI(2 * t - 255);            // a triangle, peaking at the middle
++        s = (u * (510 - u)) / 255;              // broadened, so the top is flat-ish
++        if (s > 255) s = 255;
++        for (k = 0; k < 3; k++) {
++            comp = v + (Dir[k] * peak * s) / (1024 * 255);
++            if (comp < 0)   comp = 0;
++            if (comp > 255) comp = 255;
++            if (k == 0) Ramp[i].r = (UINT8) comp;
++            if (k == 1) Ramp[i].g = (UINT8) comp;
++            if (k == 2) Ramp[i].b = (UINT8) comp;
++        }
++        Ramp[i].a = 0;
++    }
++    RampReady = TRUE;
++} // VOID BuildRamp()
++
++// Lay an image along the ramp by its own lightness, then mix that back with the
++// original. The shape and its internal contrast are untouched; only the colour
++// moves. Strength 0 returns the artwork as it was drawn -- Windows blue, Ubuntu
++// orange -- which is what turning the setting off has to mean.
++static EG_IMAGE * TintCopy(IN EG_IMAGE *Src, IN UINTN Strength) {
++    EG_IMAGE *Out;
++    UINTN     i, n, Rev;
++    INTN      lum;
++
++    if (Src == NULL)
++        return NULL;
++    Out = egCopyImage(Src);
++    if ((Out == NULL) || (Strength == 0) || !RampReady)
++        return Out;
++    if (Strength > 100)
++        Strength = 100;
++    Rev = 100 - Strength;
++    n = Out->Width * Out->Height;
++    for (i = 0; i < n; i++) {
++        lum = (77 * (INTN) Out->PixelData[i].r + 151 * (INTN) Out->PixelData[i].g +
++               28 * (INTN) Out->PixelData[i].b) >> 8;
++        if (lum > 255) lum = 255;
++        Out->PixelData[i].r = (UINT8) (((UINTN) Out->PixelData[i].r * Rev +
++                                        (UINTN) Ramp[lum].r * Strength) / 100);
++        Out->PixelData[i].g = (UINT8) (((UINTN) Out->PixelData[i].g * Rev +
++                                        (UINTN) Ramp[lum].g * Strength) / 100);
++        Out->PixelData[i].b = (UINT8) (((UINTN) Out->PixelData[i].b * Rev +
++                                        (UINTN) Ramp[lum].b * Strength) / 100);
++    }
++    return Out;
++} // EG_IMAGE * TintCopy()
++
++// Mean lightness of the strip the tiles sit on, which is the only part whose
++// brightness decides whether the glass and the names can be read.
++static UINTN BandLuminance(IN EG_IMAGE *Image) {
++    UINTN  x, y, y0, y1, Count = 0;
++    INT64  Sum = 0;
++
++    if ((Image == NULL) || (Image->Height < 16))
++        return 128;
++    y0 = (Image->Height * 40) / 100;
++    y1 = (Image->Height * 65) / 100;
++    for (y = y0; y < y1; y += 4) {
++        for (x = 0; x < Image->Width; x += 8) {
++            EG_PIXEL *P = &Image->PixelData[y * Image->Width + x];
++            Sum += (77 * P->r + 151 * P->g + 28 * P->b) >> 8;
++            Count++;
++        }
++    }
++    return (Count > 0) ? (UINTN) (Sum / Count) : 128;
++} // UINTN BandLuminance()
++
++static VOID DarkenImage(IN OUT EG_IMAGE *Image, IN UINTN Percent) {
++    UINTN i, n, Keep;
++
++    if ((Image == NULL) || (Percent == 0))
++        return;
++    if (Percent > 100)
++        Percent = 100;
++    Keep = 100 - Percent;
++    n = Image->Width * Image->Height;
++    for (i = 0; i < n; i++) {
++        Image->PixelData[i].r = (UINT8) (((UINTN) Image->PixelData[i].r * Keep) / 100);
++        Image->PixelData[i].g = (UINT8) (((UINTN) Image->PixelData[i].g * Keep) / 100);
++        Image->PixelData[i].b = (UINT8) (((UINTN) Image->PixelData[i].b * Keep) / 100);
++    }
++} // VOID DarkenImage()
++
++// Keep the artwork as it arrived, once, so every later tint starts from it.
++static VOID KeepPristine(VOID) {
++    UINTN i;
++
++    if (PristineIcons != NULL)
++        return;
++    PristineCount = MainMenu.EntryCount;
++    if (PristineCount == 0)
++        return;
++    PristineIcons = AllocateZeroPool(PristineCount * sizeof(EG_IMAGE *));
++    if (PristineIcons == NULL) {
++        PristineCount = 0;
++        return;
++    }
++    for (i = 0; i < PristineCount; i++)
++        PristineIcons[i] = egCopyImage(MainMenu.Entries[i]->Image);
++} // VOID KeepPristine()
++
++//
++// Put the current settings on the screen
++//
++VOID ApplyTheme(VOID) {
++    EG_IMAGE *Loaded, *Scaled;
++    CHAR16   *Path;
++    UINTN     i, Darken, Lum;
++    INTN      Dir[3], Chroma;
++
++    if (!AllowGraphicsMode)
++        return;
++
++    // the photograph, kept as decoded so dimming is never applied twice
++    if ((GlobalConfig.BackgroundFile != NULL) &&
++        ((PristineName == NULL) || !MyStriCmp(PristineName, GlobalConfig.BackgroundFile))) {
++        Path = PoolPrint(L"%s\\%s", BACKGROUND_DIR, GlobalConfig.BackgroundFile);
++        if (Path != NULL) {
++            Loaded = egLoadImage(SelfDir, Path, FALSE);
++            MyFreePool(Path);
++            if (Loaded != NULL) {
++                if ((Loaded->Width != UGAWidth) || (Loaded->Height != UGAHeight)) {
++                    Scaled = egScaleImage(Loaded, UGAWidth, UGAHeight);
++                    if (Scaled != NULL) { egFreeImage(Loaded); Loaded = Scaled; }
++                }
++                egFreeImage(PristineBackground);
++                PristineBackground = Loaded;
++                MyFreePool(PristineName);
++                PristineName = StrDuplicate(GlobalConfig.BackgroundFile);
++            } else {
++                LOG(1, LOG_LINE_NORMAL, L"Could not load background '%s'",
++                    GlobalConfig.BackgroundFile);
++            }
++        }
++    }
++    if (PristineBackground == NULL)
++        return;
++
++    Darken = GlobalConfig.Darken;
++    if (Darken == DARKEN_AUTO) {
++        Lum = BandLuminance(PristineBackground);
++        Darken = (Lum <= TARGET_LUMINANCE) ? 0 : (100 - (TARGET_LUMINANCE * 100) / Lum);
++        if (Darken < 5)
++            Darken = 0;
++    }
++
++    egFreeImage(ThemeBanner);
++    ThemeBanner = egCopyImage(PristineBackground);
++    DarkenImage(ThemeBanner, Darken);
++    egFreeImage(GlobalConfig.ScreenBackground);
++    GlobalConfig.ScreenBackground = egCopyImage(ThemeBanner);
++
++    SampleAccent(ThemeBanner, Dir, &Chroma);
++    BuildRamp(Dir, Chroma);
++    LOG(1, LOG_LINE_NORMAL, L"Theme: background '%s', dim %d%%, chroma %d, tint %d%%",
++        GlobalConfig.BackgroundFile ? GlobalConfig.BackgroundFile : L"(banner)",
++        Darken, Chroma, GlobalConfig.Tint);
++
++    KeepPristine();
++    for (i = 0; (i < PristineCount) && (i < MainMenu.EntryCount); i++) {
++        if (PristineIcons[i] == NULL)
++            continue;
++        egFreeImage(MainMenu.Entries[i]->Image);
++        MainMenu.Entries[i]->Image = TintCopy(PristineIcons[i], GlobalConfig.Tint);
++    }
++    ResetTheming();
++} // VOID ApplyTheme()
++
++// Reachable from menu.c, which owns the selection images and the spinner dot.
++EG_IMAGE * ThemeTint(IN EG_IMAGE *Source) {
++    return TintCopy(Source, GlobalConfig.Tint);
++} // EG_IMAGE * ThemeTint()
++
++//
++// The settings screen
++//
++
++// Every picture sitting in EFI\refind\backgrounds, whatever put it there.
++static CHAR16 * ListBackgrounds(OUT UINTN *Count) {
++    REFIT_DIR_ITER  Iter;
++    EFI_FILE_INFO  *Entry;
++    CHAR16         *List = NULL, *Ext;
++
++    *Count = 0;
++    DirIterOpen(SelfDir, BACKGROUND_DIR, &Iter);
++    while (DirIterNext(&Iter, 2, NULL, &Entry)) {
++        if (Entry->FileName[0] == L'.')
++            continue;
++        Ext = FindExtension(Entry->FileName);
++        if (MyStriCmp(Ext, L".png") || MyStriCmp(Ext, L".jpg") ||
++            MyStriCmp(Ext, L".jpeg") || MyStriCmp(Ext, L".bmp")) {
++            MergeStrings(&List, Entry->FileName, L',');
++            (*Count)++;
++        }
++        MyFreePool(Ext);
++    }
++    DirIterClose(&Iter);
++    return List;
++} // CHAR16 * ListBackgrounds()
++
++// Write the choices where the next boot will find them. refind.conf ends with
++// `include theme.conf`, so what is written here is read last and wins; and the
++// file rEFInd ships with is never touched, so a bad setting is one deletion away
++// from the way it came.
++static BOOLEAN SaveTheme(VOID) {
++    EFI_FILE_PROTOCOL *File = NULL;
++    EFI_STATUS         Status;
++    CHAR16            *Body;
++    UINTN              Size;
++
++    // Delete first rather than truncate: writing a shorter file over a longer
++    // one would leave the tail of the old settings behind, and the tail of a
++    // config file is the part that wins.
++    Status = refit_call5_wrapper(SelfDir->Open, SelfDir, &File, THEME_FILE,
++                                 EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE, 0);
++    if (!EFI_ERROR(Status))
++        refit_call1_wrapper(File->Delete, File);
++    File = NULL;
++    Status = refit_call5_wrapper(SelfDir->Open, SelfDir, &File, THEME_FILE,
++                                 EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE |
++                                 EFI_FILE_MODE_CREATE, 0);
++    if (EFI_ERROR(Status))
++        return FALSE;
++    Body = PoolPrint(L"\xFEFF# Written by the boot menu's own settings screen.\r\n"
++                     L"# Delete this file to go back to what was installed.\r\n"
++                     L"background %s\r\n"
++                     L"darken %d\r\n"
++                     L"tint %d\r\n"
++                     L"frost_radius %d\r\n"
++                     L"animations %s\r\n",
++                     GlobalConfig.BackgroundFile ? GlobalConfig.BackgroundFile : L"",
++                     GlobalConfig.Darken, GlobalConfig.Tint, GlobalConfig.FrostRadius,
++                     GlobalConfig.Animations ? L"true" : L"false");
++    if (Body == NULL) {
++        refit_call1_wrapper(File->Close, File);
++        return FALSE;
++    }
++    Size = StrLen(Body) * sizeof(CHAR16);
++    Status = refit_call3_wrapper(File->Write, File, &Size, Body);
++    refit_call1_wrapper(File->Close, File);
++    MyFreePool(Body);
++    return !EFI_ERROR(Status);
++} // BOOLEAN SaveTheme()
++
++static VOID NextBackground(IN CHAR16 *List, IN UINTN Count, IN INTN By) {
++    CHAR16 *One;
++    UINTN   i = 0;
++    INTN    Current = -1, Wanted;
++
++    if ((List == NULL) || (Count == 0))
++        return;
++    while ((One = FindCommaDelimited(List, i)) != NULL) {
++        if ((GlobalConfig.BackgroundFile != NULL) &&
++            MyStriCmp(One, GlobalConfig.BackgroundFile))
++            Current = (INTN) i;
++        MyFreePool(One);
++        i++;
++    }
++    Wanted = ((Current + By) % (INTN) Count + (INTN) Count) % (INTN) Count;
++    One = FindCommaDelimited(List, (UINTN) Wanted);
++    if (One != NULL) {
++        MyFreePool(GlobalConfig.BackgroundFile);
++        GlobalConfig.BackgroundFile = One;
++    }
++} // VOID NextBackground()
++
++static CHAR16 * DarkenLabel(VOID) {
++    if (GlobalConfig.Darken == DARKEN_AUTO)
++        return PoolPrint(L"Dimming              automatic");
++    return PoolPrint(L"Dimming              %d%%", GlobalConfig.Darken);
++} // CHAR16 * DarkenLabel()
++
++VOID ShowSettingsMenu(VOID) {
++    REFIT_MENU_SCREEN  Menu = { L"Settings", NULL, 0, NULL, 0, NULL, 0, NULL,
++                                L"Enter changes a setting, Esc returns to the menu",
++                                L"" };
++    REFIT_MENU_ENTRY  *Rows[6], *Chosen;
++    MENU_STYLE_FUNC    Style = AllowGraphicsMode ? GraphicsMenuStyle : TextMenuStyle;
++    CHAR16            *List;
++    UINTN              Count, Exit, i;
++    INTN               Default = 0;
++    BOOLEAN            Running = TRUE, Saved = FALSE;
++
++    List = ListBackgrounds(&Count);
++    if ((GlobalConfig.BackgroundFile == NULL) && (Count > 0))
++        NextBackground(List, Count, 1);
++
++    Menu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
++    while (Running) {
++        // rebuilt every time round, because every title carries a value
++        for (i = 0; i < Menu.EntryCount; i++) {
++            MyFreePool(Menu.Entries[i]->Title);
++            MyFreePool(Menu.Entries[i]);
++        }
++        MyFreePool(Menu.Entries);
++        Menu.Entries = NULL;
++        Menu.EntryCount = 0;
++        for (i = 0; i < Menu.InfoLineCount; i++)
++            MyFreePool(Menu.InfoLines[i]);
++        MyFreePool(Menu.InfoLines);
++        Menu.InfoLines = NULL;
++        Menu.InfoLineCount = 0;
++
++        AddMenuInfoLine(&Menu, PoolPrint(L"%d photographs in EFI\\refind\\%s",
++                                         Count, BACKGROUND_DIR));
++        AddMenuInfoLine(&Menu, StrDuplicate(L"Drop your own in there from any system"));
++        AddMenuInfoLine(&Menu, StrDuplicate(L""));
++
++        Rows[0] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
++        Rows[0]->Title = PoolPrint(L"Background           %s",
++                                   GlobalConfig.BackgroundFile ?
++                                   GlobalConfig.BackgroundFile : L"(none found)");
++        Rows[1] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
++        Rows[1]->Title = DarkenLabel();
++        Rows[2] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
++        Rows[2]->Title = PoolPrint(L"Frosted glass        %d", GlobalConfig.FrostRadius);
++        Rows[3] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
++        Rows[3]->Title = PoolPrint(L"Colour from photo    %d%%", GlobalConfig.Tint);
++        Rows[4] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
++        Rows[4]->Title = PoolPrint(L"Animations           %s",
++                                   GlobalConfig.Animations ? L"on" : L"off");
++        Rows[5] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
++        Rows[5]->Title = StrDuplicate(Saved ? L"Saved. Press Esc to return"
++                                            : L"Save these for next time");
++        for (i = 0; i < 6; i++) {
++            Rows[i]->Tag = TAG_RETURN;
++            AddMenuEntry(&Menu, Rows[i]);
++        }
++
++        Exit = RunGenericMenu(&Menu, Style, &Default, &Chosen);
++        if (Exit != MENU_EXIT_ENTER) {
++            Running = FALSE;
++            continue;
++        }
++        Saved = FALSE;
++        if (Chosen == Rows[0]) {
++            NextBackground(List, Count, 1);
++        } else if (Chosen == Rows[1]) {
++            if (GlobalConfig.Darken == DARKEN_AUTO)      GlobalConfig.Darken = 0;
++            else if (GlobalConfig.Darken >= 80)          GlobalConfig.Darken = DARKEN_AUTO;
++            else                                          GlobalConfig.Darken += 10;
++        } else if (Chosen == Rows[2]) {
++            GlobalConfig.FrostRadius = (GlobalConfig.FrostRadius >= 32) ? 0
++                                       : GlobalConfig.FrostRadius + 4;
++        } else if (Chosen == Rows[3]) {
++            GlobalConfig.Tint = (GlobalConfig.Tint >= 100) ? 0 : GlobalConfig.Tint + 25;
++        } else if (Chosen == Rows[4]) {
++            GlobalConfig.Animations = !GlobalConfig.Animations;
++        } else if (Chosen == Rows[5]) {
++            Saved = SaveTheme();
++        }
++        if (Chosen != Rows[5])
++            ApplyTheme();
++        MarkScreenDirty();
++    } // while
++
++    MyFreePool(List);
++    for (i = 0; i < Menu.EntryCount; i++) {
++        MyFreePool(Menu.Entries[i]->Title);
++        MyFreePool(Menu.Entries[i]);
++    }
++    MyFreePool(Menu.Entries);
++    for (i = 0; i < Menu.InfoLineCount; i++)
++        MyFreePool(Menu.InfoLines[i]);
++    MyFreePool(Menu.InfoLines);
++    MarkScreenDirty();
++} // VOID ShowSettingsMenu()
+diff -ruN a/refind/theme.h b/refind/theme.h
+--- a/refind/theme.h	1970-01-01 01:00:00.000000000 +0100
++++ b/refind/theme.h	2026-08-31 01:41:13.676206375 +0200
+@@ -0,0 +1,24 @@
++/*
++ * refind/theme.h
++ * Choosing and applying the look, from inside the boot menu.
++ */
++
++#ifndef __THEME_H_
++#define __THEME_H_
++
++#include "global.h"
++#include "../libeg/libeg.h"
++
++// Work out the colours from the current background and lay them over the icons,
++// the tool glyphs, the selection and the spinner. Safe to call repeatedly: the
++// artwork is kept as it was loaded and tinted from that copy every time.
++VOID ApplyTheme(VOID);
++
++// The settings screen: background, dimming, glass, colour, animation, and a way
++// to write the choices to EFI\refind\theme.conf so they survive a reboot.
++VOID ShowSettingsMenu(VOID);
++
++// Tint one image the way the rest of the theme is tinted.
++EG_IMAGE * ThemeTint(IN EG_IMAGE *Source);
++
++#endif

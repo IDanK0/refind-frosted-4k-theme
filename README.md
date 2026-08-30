@@ -137,8 +137,8 @@ firmware reports.
 into the binary — `L"Shut Down Computer"`, `L"Reboot Computer"` — with no locale
 files and no gettext, so no configuration reaches them. Since the build is
 already patched and rebuilt here, translating them is more of the same patch
-rather than a different kind of problem; it simply is not done yet. The
-graphical picker is translated.
+rather than a different kind of problem; it simply is not done yet. That now
+covers the settings screen too.
 
 **Discovered systems are slightly softer than the hand-drawn ones.** rEFInd's
 stock icons are 128px and get scaled up to 218. Windows and Ubuntu are drawn as
@@ -215,8 +215,8 @@ actually see, and tinting only the fill underneath them changes nothing.
 Stronger, and it reads as a pink theme rather than as a theme belonging to the
 photograph.
 
-`--tint 0` puts Windows back to blue and Ubuntu back to orange, and the picker
-has a switch for it.
+`tint 0` in `theme.conf` puts Windows back to blue and Ubuntu back to orange,
+and the settings screen in the boot menu steps it in quarters.
 
 ---
 
@@ -408,77 +408,35 @@ before installing.
 
 ---
 
-## Choosing a background
+## Choosing a background: from the boot menu
 
-### The graphical way
+There is a **Settings** icon in the tool row. It lists every picture sitting in
+`EFI/refind/backgrounds`, dims, glass, colour and animation, and writes what you
+choose to `EFI/refind/theme.conf` — which `refind.conf` includes last, so it
+wins, and deleting it brings the machine back to what was installed.
 
-```bash
-./background-gui.py
-```
+Adding a photograph of your own means copying a file onto the EFI partition.
+From anything: Linux, Windows, a live USB, the firmware's own file manager. It
+appears in the list at the next boot and is themed exactly like the ones that
+shipped, because nothing about the theme is written down per photograph.
 
-A GTK4 / libadwaita window: every option as a thumbnail already composited into
-the theme, a **+** button to bring in a photo of your own, a switch for automatic
-dimming and a slider for manual, and *Preview* / *Apply*. Applying asks for the
-password once, through polkit.
+**This is why the colours are computed at boot rather than baked in.** The old
+arrangement rendered everything with Python on the installed Linux, which meant
+the boot menu could only be re-themed from one particular operating system — an
+odd dependency for the thing that starts all of them. The shapes are still drawn
+ahead of time, because compositing forty-seven logos onto rounded glass is not
+work for a bootloader. The colours are not.
 
-`./install-launcher.sh` puts it in the applications menu, so it is one click
-away and no terminal is ever needed.
-
-![The picker](screenshots/gui.png)
-
-*Shown in Italian, because that is the language of the machine it was taken on —
-the interface follows whatever the system is set to.*
-
-The interface follows the system language through gettext. English and Italian
-are included; adding another means copying `po/it.po` and translating its 21
-strings, then `msgfmt -o locale/<lang>/LC_MESSAGES/refind-background.mo`.
-
-### The command line way
+### From the command line, to change the shapes
 
 ```bash
-./background.py                     # browse the library and pick one
-./background.py 3                   # or go straight to entry 3
-./background.py desert-skies        # or by name
-./background.py ~/holiday.jpg       # or any photo of your own
+./build.py                          # regenerate the artwork
+./build.py --background ~/mine.png  # and preview it against a photo
+./build.py --tint 0                 # preview with the original brand colours
 ```
 
-Without arguments it prints the library, opens a contact sheet showing every
-option already composited into the theme, asks which one you want, renders a
-full-screen preview, and installs only after you confirm.
-
-Your own photos: drop them into `library/custom/` and they appear in the list.
-Any size or aspect ratio works — they are centre-cropped to 16:9 and scaled to
-3840×2160.
-
-![Library](library/preview-sheet.jpg)
-
-### Darkening
-
-The frosted tiles and the white labels need a reasonably dark backdrop, so the
-background is dimmed before they are composited onto it.
-
-```bash
-./background.py 3                   # default: auto
-./background.py --darken 0 3        # leave the photo exactly as shot
-./background.py --darken 45 3       # dim it by 45%
-./background.py --darken 100 3      # black
-```
-
-**`auto` is the default.** It measures the mean luminance of the strip the tiles
-sit on and dims until it reaches **30**, which is where the photograph this
-theme was first built around happened to sit. Below 5% it does nothing, since a few percent is not worth
-applying. Change the default in `library/library.json` (`darken_predefinito`).
-
-`--list` shows what each library photo measures and what `auto` would choose:
-
-| Background | Licence | Luminance | `auto` |
-|---|---|---|---|
-| Mars Over Dunes | Public domain | 31 | 0 |
-| Dunes, Crestone Peaks and Stars | CC BY 2.0 | 42 | 28 |
-| Morning Light on Dunes | Public domain | 67 | 55 |
-| Desert Skies | CC0 | 107 | 72 |
-| Snowy Dunes in Moonlight | Public domain | 136 | 78 |
-| Clear Desert Night Sky | CC0 | 154 | 80 |
+Those write into `assets/`, which `sudo ./install-assets.sh assets` copies to the
+EFI partition along with the library.
 
 ---
 
