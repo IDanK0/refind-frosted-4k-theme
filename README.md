@@ -137,6 +137,14 @@ and all. So the splash lives there, and a system nobody has installed yet
 already has its boot logo, correct on the first boot, without being told
 anything.
 
+What is centred is the group, not the tile that holds it. The panel sits high
+inside the icon with the name beneath it and the ring hangs below that again, so
+putting the tile in the middle of the screen leaves what you actually look at
+195 px low. The top of the panel is read from the icon's own alpha channel and
+the whole group shifted until that span is centred — which stays right for an
+icon with a longer name, or with none at all. rEFInd and Plymouth compute it the
+same way and land on the same pixel.
+
 `handoff_splash` is how long it stays, in milliseconds; 1800 is one full turn of
 the ring, and 0 switches it off. It is the last thing drawn before the screen
 goes black, which is why it does not collide with the logo Windows draws next.

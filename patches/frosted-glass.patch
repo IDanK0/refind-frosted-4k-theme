@@ -278,7 +278,7 @@ diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
      StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
 diff -ruN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-30 23:50:29.079634518 +0200
++++ b/refind/menu.c	2026-08-30 23:56:11.941014587 +0200
 @@ -97,6 +97,7 @@
  #define TILE_YSPACING (16)
  
@@ -359,7 +359,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      } // if/else
  } // VOID DrawMainMenuEntry()
  
-@@ -1174,6 +1198,163 @@
+@@ -1174,6 +1198,198 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -448,13 +448,28 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +    return Image;
 +}
 +
++// The first row of an image with anything drawn on it. The icon is a panel with
++// a name under it inside a larger transparent square, so the square's own edge
++// says nothing about where the ink starts.
++static INTN ImageInkTop(IN EG_IMAGE *Image) {
++    UINTN x, y;
++
++    if (Image == NULL)
++        return 0;
++    for (y = 0; y < Image->Height; y++)
++        for (x = 0; x < Image->Width; x++)
++            if (Image->PixelData[y * Image->Width + x].a > 8)
++                return (INTN) y;
++    return 0;
++}
++
 +// Show the chosen system on its own, the way the menu showed it, with a ring of
 +// dots turning underneath, and then get out of the way. Icon is the entry's own
 +// image, so this is correct for a system nobody has installed yet.
 +VOID ShowHandoffSplash(IN EG_IMAGE *Icon) {
 +    EG_IMAGE *Tile, *Dot, *Band;
-+    UINTN     Elapsed = 0, Ring, DotSize, Span, TileX, TileY, CentreY, BandX, BandY, d;
-+    INTN      Theta, Angle;
++    UINTN     Elapsed = 0, Ring, DotSize, Span, TileX, BandX, BandY, d;
++    INTN      Theta, Angle, TileY, CentreY, GroupTop, GroupBottom, Shift;
 +
 +    if ((GlobalConfig.HandoffSplash == 0) || !AllowGraphicsMode ||
 +        (Icon == NULL) || (GlobalConfig.ScreenBackground == NULL))
@@ -465,31 +480,51 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +    TileSizes[1] = (GlobalConfig.IconSizes[ICON_SIZE_SMALL] * 4) / 3;
 +    InitSelection();
 +
-+    // the photograph, with the menu wiped off it
-+    BltImage(GlobalConfig.ScreenBackground, 0, 0);
-+
-+    // the chosen entry, placed exactly where the menu would put a single one
-+    TileX = (UGAWidth + TILE_XSPACING - (TileSizes[0] + TILE_XSPACING)) / 2;
-+    TileY = ComputeRow0PosY();
-+    Tile = egCropImage(GlobalConfig.ScreenBackground, TileX, TileY, TileSizes[0], TileSizes[0]);
-+    if (Tile != NULL) {
-+        egFrostImage(Tile, FrostImages[0], GlobalConfig.FrostRadius);
-+        if (SelectionImages[0] != NULL)
-+            egComposeImage(Tile, SelectionImages[0], 0, 0);
-+        BltImageCompositeBadge(Tile, Icon, NULL, TileX, TileY);
-+        egFreeImage(Tile);
-+    }
-+
-+    // the ring, where the tool row and the description line would have been
++    // Work out where everything goes before drawing any of it, because centring
++    // the tile is not the same as centring the picture. The panel sits high
++    // inside the icon with the name beneath it, and the ring hangs below that
++    // again, so a tile in the middle of the screen leaves the group people
++    // actually look at sitting low -- by 195 px at 3840x2160. Measure the ink
++    // instead of the boxes and shift the whole group until it is centred; taking
++    // the top from the icon's own alpha keeps that true for an icon with a
++    // longer name, or with none.
++    TileX   = (UGAWidth + TILE_XSPACING - (TileSizes[0] + TILE_XSPACING)) / 2;
 +    Ring    = (110 * UGAHeight) / 2160;
 +    DotSize = (20 * UGAHeight) / 2160;
 +    if (DotSize < 4)
 +        DotSize = 4;
-+    CentreY = TileY + TileSizes[0] + TILE_YSPACING + TileSizes[1] + TILE_YSPACING
-+              + (75 * UGAHeight) / 2160;
++
++    TileY   = (INTN) ComputeRow0PosY();
++    CentreY = TileY + (INTN) TileSizes[0] + TILE_YSPACING + (INTN) TileSizes[1]
++              + TILE_YSPACING + (75 * (INTN) UGAHeight) / 2160;
++    GroupTop    = TileY + ((INTN) TileSizes[0] - (INTN) Icon->Height) / 2 + ImageInkTop(Icon);
++    GroupBottom = CentreY + (INTN) Ring + (INTN) DotSize / 2;
++    Shift       = (INTN) UGAHeight / 2 - (GroupTop + GroupBottom) / 2;
++    TileY      += Shift;
++    CentreY    += Shift;
++    if (TileY < 0)
++        TileY = 0;
++    if (CentreY < (INTN) (Ring + DotSize))
++        CentreY = (INTN) (Ring + DotSize);
++
++    // the photograph, with the menu wiped off it
++    BltImage(GlobalConfig.ScreenBackground, 0, 0);
++
++    // the chosen entry
++    Tile = egCropImage(GlobalConfig.ScreenBackground, TileX, (UINTN) TileY,
++                       TileSizes[0], TileSizes[0]);
++    if (Tile != NULL) {
++        egFrostImage(Tile, FrostImages[0], GlobalConfig.FrostRadius);
++        if (SelectionImages[0] != NULL)
++            egComposeImage(Tile, SelectionImages[0], 0, 0);
++        BltImageCompositeBadge(Tile, Icon, NULL, TileX, (UINTN) TileY);
++        egFreeImage(Tile);
++    }
++
++    // the ring
 +    Span  = 2 * (Ring + DotSize);
 +    BandX = (UGAWidth / 2) - Ring - DotSize;
-+    BandY = CentreY - Ring - DotSize;
++    BandY = (UINTN) CentreY - Ring - DotSize;
 +    Dot = MakeDot(DotSize);
 +
 +    if ((Dot != NULL) && (BandY + Span <= UGAHeight)) {
@@ -523,7 +558,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1368,7 @@
+@@ -1187,7 +1403,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
