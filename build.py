@@ -123,6 +123,15 @@ def t_power(d, S):
 def t_reset(d, S):
     m = S * .16; d.arc([m, m, S - m, S - m], 120, 60, fill=GR, width=int(S*.085))
     d.polygon([(S*.80,S*.10),(S*.90,S*.42),(S*.58,S*.34)], fill=GR)
+def t_settings(d, S):
+    C = S / 2; R = S * .30; T = int(S * .10)
+    d.ellipse([C-R, C-R, C+R, C+R], outline=GR, width=T)
+    d.ellipse([C-S*.085, C-S*.085, C+S*.085, C+S*.085], fill=GR)
+    for i in range(8):
+        a = math.radians(i * 45)
+        x, y = C + math.cos(a) * (R + S*.075), C + math.sin(a) * (R + S*.075)
+        d.ellipse([x-S*.055, y-S*.055, x+S*.055, y+S*.055], fill=GR)
+
 def t_chip(d, S):
     a, b = S * .26, S * .74
     d.rounded_rectangle([a,a,b,b], radius=S*.07, outline=GR, width=int(S*.07))
@@ -132,7 +141,7 @@ def t_chip(d, S):
         d.rectangle([S*t-S*.022, b, S*t+S*.022, S*.90], fill=GR)
         d.rectangle([S*.10, S*t-S*.022, a, S*t+S*.022], fill=GR)
         d.rectangle([b, S*t-S*.022, S*.90, S*t+S*.022], fill=GR)
-TOOLS = [(t_about, "func_about.png"), (t_hidden, "func_hidden.png"),
+TOOLS = [(t_settings, "func_settings.png"), (t_about, "func_about.png"), (t_hidden, "func_hidden.png"),
          (t_power, "func_shutdown.png"), (t_reset, "func_reset.png"),
          (t_chip,  "func_firmware.png")]
 
@@ -431,14 +440,17 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     bg = fit(background)
     tint = 0 if str(tint).lower() in ("off", "false", "no", "none") else int(tint)
     tint = max(0, min(100, tint))
-    C = shades(bg, tint / 100.0)
+    # What is written to disk is neutral. The colours are worked out by rEFInd
+    # at boot from whatever photograph is in use, so that a picture chosen from
+    # the boot menu's own settings screen -- or dropped onto the EFI partition
+    # from another operating system entirely -- is themed exactly like the ones
+    # that shipped. The tint is only used here to render an honest preview of
+    # what the machine will draw.
+    C = shades(bg, 0.0)
     GR = tuple(C["glyph"]) + (255,)
-    if tint:
-        h, sat = accent(bg)
-        say(f"  colour     matched to the photograph: hue {h*360:.0f}\u00b0, "
-            f"saturation {sat*100:.0f}%, at {tint}%")
-    else:
-        say("  colour     original: Windows blue, Ubuntu orange, white labels")
+    h, sat = accent(bg)
+    say(f"  colour     assets written neutral; rEFInd tints at boot "
+        f"(this photo: hue {h*360:.0f}\u00b0, saturation {sat*100:.0f}%, at {tint}%)")
 
     # font: the glyphs are drawn INVERTED. libeg/text.c does 255-x on dark
     # backgrounds, so what is written here is the complement of what appears.
@@ -471,6 +483,15 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     for fn, name in TOOLS:
         aa(192, fn).save(f"{out}/icons/{name}")
     say(f"  icons      {n} operating systems themed, each carrying its own name")
+
+    with open(f"{out}/theme.conf", "w", encoding="utf-16") as fh:
+        fh.write("# Defaults written by build.py. The boot menu's settings screen\r\n"
+                 "# rewrites this file; delete it to come back here.\r\n"
+                 f"background {os.path.basename(background)}\r\n"
+                 f"darken {101 if str(darken).lower() == 'auto' else int(darken)}\r\n"
+                 f"tint {tint}\r\n"
+                 f"frost_radius {FROST}\r\n"
+                 "animations true\r\n")
 
     # the dot the spinner is made of, for rEFInd and for Plymouth
     dot = Image.new("RGBA", (DOT_PX * SS, DOT_PX * SS), (0, 0, 0, 0))
@@ -518,27 +539,49 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     return lum
 
 
-def preview(assets, dst, icons, label, scale=None):
-    """Render the menu exactly as rEFInd lays it out, for any number of entries."""
+def read_tint(assets):
+    """What rEFInd will use, read from the file rEFInd reads."""
+    try:
+        for line in open(f"{assets}/theme.conf", encoding="utf-16"):
+            if line.strip().startswith("tint"):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 100
+
+
+def preview(assets, dst, icons, label, scale=None, tint=None):
+    """Render the menu exactly as rEFInd lays it out, for any number of entries.
+
+    The artwork on disk is neutral, because rEFInd colours it at boot. So the
+    preview colours it too, with the same arithmetic, or it would be a picture of
+    a menu nobody will ever see."""
     n = len(icons)
     r0x = (W + XSP - (TILE + XSP) * n) // 2
     r1y = R0Y + TILE + YSP
     r1x = (W + XSP - (TILE1 + XSP) * 5) // 2
     txty = r1y + TILE1 + YSP
     c = Image.open(f"{assets}/background.png").convert("RGBA")
+    if tint is None:
+        tint = read_tint(assets)
+    table = shades(c, 1.0)["ramp"] if tint else None
+    def paint(path, size):
+        im = Image.open(path).convert("RGBA").resize((size, size), Image.LANCZOS)
+        return duotone(im, table, tint / 100.0) if tint else im
+
     # rEFInd frosts the cropped background before it lays the highlight and the
     # icon over it, so do it in that order here too.
     mask = Image.open(f"{assets}/frost_big.png").convert("RGBA")
     for i in range(n):
         apply_frost(c, mask, r0x + i * (TILE + XSP) + ICON_OFF, R0Y + ICON_OFF, FROST)
-    c.alpha_composite(Image.open(f"{assets}/selection_big.png").convert("RGBA"), (r0x, R0Y))
+    c.alpha_composite(paint(f"{assets}/selection_big.png", TILE), (r0x, R0Y))
     for i, name in enumerate(icons):
-        ic = Image.open(f"{assets}/icons/{name}.png").convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
-        c.alpha_composite(ic, (r0x + i * (TILE + XSP) + ICON_OFF, R0Y + ICON_OFF))
+        c.alpha_composite(paint(f"{assets}/icons/{name}.png", BIG),
+                          (r0x + i * (TILE + XSP) + ICON_OFF, R0Y + ICON_OFF))
     o1 = (TILE1 - SMALL) // 2
     for i, (_, fn) in enumerate(TOOLS):
-        t = Image.open(f"{assets}/icons/{fn}").convert("RGBA").resize((SMALL, SMALL), Image.LANCZOS)
-        c.alpha_composite(t, (r1x + i * (TILE1 + XSP) + o1, r1y + o1))
+        c.alpha_composite(paint(f"{assets}/icons/{fn}", SMALL),
+                          (r1x + i * (TILE1 + XSP) + o1, r1y + o1))
     if label:
         # Use the font that was generated, not a fresh one drawn here. Redrawing
         # it is how the preview came to show a grey line while the menu drew a
@@ -547,6 +590,8 @@ def preview(assets, dst, icons, label, scale=None):
         # from libeg/text.c: on a background darker than 128 the glyphs are
         # inverted, r, g and b but not alpha.
         atlas = Image.open(f"{assets}/font.png").convert("RGBA")
+        if tint:
+            atlas = duotone(atlas, table, tint / 100.0)
         cw, ch = atlas.width // 96, atlas.height
         band = c.crop((0, txty, W, min(H, txty + ch))).convert("L")
         if ImageStat.Stat(band).mean[0] < 128:
