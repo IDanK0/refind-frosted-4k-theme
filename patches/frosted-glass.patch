@@ -217,8 +217,8 @@ diff -ruN a/Make.common b/Make.common
 I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -ruN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-08-30 18:43:56.375287365 +0200
-@@ -800,6 +800,17 @@
++++ b/refind/config.c	2026-08-30 23:49:15.756825053 +0200
+@@ -800,6 +800,22 @@
                  }
              } // for (graphics_on tokens)
  
@@ -226,6 +226,11 @@ diff -ruN a/refind/config.c b/refind/config.c
 +            HandleInt(TokenList, TokenCount, &(GlobalConfig.FrostRadius));
 +            if (GlobalConfig.FrostRadius > 200)
 +                GlobalConfig.FrostRadius = 200;
++
++        } else if (MyStriCmp(TokenList[0], L"handoff_splash")) {
++            HandleInt(TokenList, TokenCount, &(GlobalConfig.HandoffSplash));
++            if (GlobalConfig.HandoffSplash > 5000)
++                GlobalConfig.HandoffSplash = 5000;
 +
 +        } else if (MyStriCmp(TokenList[0], L"frost_mask_big")) {
 +            HandleString(TokenList, TokenCount, &(GlobalConfig.FrostMaskBigFileName));
@@ -238,22 +243,42 @@ diff -ruN a/refind/config.c b/refind/config.c
  
 diff -ruN a/refind/global.h b/refind/global.h
 --- a/refind/global.h	2024-04-04 21:48:57.000000000 +0200
-+++ b/refind/global.h	2026-08-30 18:43:56.375230853 +0200
-@@ -393,6 +393,11 @@
++++ b/refind/global.h	2026-08-30 23:49:15.756705539 +0200
+@@ -393,6 +393,12 @@
     UINT32_LIST      *CsrValues;
     UINTN            ShowTools[NUM_TOOLS];
     CHAR8            ScanFor[NUM_SCAN_OPTIONS]; // codes of types of loaders for which to scan
 +   // Radius, in pixels, of the frosted-glass blur applied to the background
 +   // under the translucent parts of an icon. 0 disables it.
 +   UINTN            FrostRadius;
++   UINTN            HandoffSplash;
 +   CHAR16           *FrostMaskBigFileName;
 +   CHAR16           *FrostMaskSmallFileName;
  } REFIT_CONFIG;
  
  // Global variables
+diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
+--- a/refind/launch_efi.c	2024-04-01 16:29:29.000000000 +0200
++++ b/refind/launch_efi.c	2026-08-30 23:49:15.756919617 +0200
+@@ -65,6 +65,7 @@
+ #include "launch_efi.h"
+ #include "log.h"
+ #include "scan.h"
++#include "menu.h"
+ 
+ //
+ // constants
+@@ -438,6 +439,7 @@
+     }
+ 
+     LoaderPath = Basename(Entry->LoaderPath);
++    ShowHandoffSplash(Entry->me.Image);
+     BeginExternalScreen(Entry->UseGraphicsMode, L"Booting OS");
+     StoreLoaderName(SelectionName);
+     StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
 diff -ruN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-30 18:44:25.278421931 +0200
++++ b/refind/menu.c	2026-08-30 23:50:29.079634518 +0200
 @@ -97,6 +97,7 @@
  #define TILE_YSPACING (16)
  
@@ -334,7 +359,171 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      } // if/else
  } // VOID DrawMainMenuEntry()
  
-@@ -1187,7 +1211,7 @@
+@@ -1174,6 +1198,163 @@
+     return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
+ }
+ 
++//
++// The handoff splash
++//
++// Plymouth cannot do this. It lives inside Ubuntu's initramfs and only runs
++// when Ubuntu is what you picked -- so it can never be the boot logo of
++// Windows, or of a stick plugged in this morning. rEFInd is the one thing that
++// runs before every one of them, and it already holds, for each entry it found,
++// the icon carrying that system's logo and name. So the splash belongs here,
++// and it is right for anything the machine ever boots without being told what.
++//
++// No floating point: rEFInd is an EFI application and does not set up the FPU,
++// so the whole animation is fixed point. Angles are in 4096ths of a turn and
++// sines are 4096ths of one, read from a quarter-wave table with linear
++// interpolation -- under a pixel of error on a radius of 110.
++
++#define SPIN_DOTS    (6)
++#define SPIN_PERIOD  (1800)   // milliseconds for one turn
++#define SPIN_STAGGER (410)    // 0.100 of a period between one dot and the next
++#define SPIN_SWING   (359)    // 0.55 rad of easing, as 4096ths of a turn
++#define SPIN_FRAME   (20)     // milliseconds a frame is held: 50 a second
++
++static const INTN SinTable[65] = {
++        0,   101,   201,   301,   401,   501,   601,   700,
++      799,   897,   995,  1092,  1189,  1285,  1380,  1474,
++     1567,  1660,  1751,  1842,  1931,  2019,  2106,  2191,
++     2276,  2359,  2440,  2520,  2598,  2675,  2751,  2824,
++     2896,  2967,  3035,  3102,  3166,  3229,  3290,  3349,
++     3406,  3461,  3513,  3564,  3612,  3659,  3703,  3745,
++     3784,  3822,  3857,  3889,  3920,  3948,  3973,  3996,
++     4017,  4036,  4052,  4065,  4076,  4085,  4091,  4095,
++     4096
++};
++
++// sin(2*pi*A/4096), in 4096ths.
++static INTN SinQ(INTN A) {
++    INTN Sign = 1, Index, Frac;
++
++    A &= 4095;
++    if (A >= 2048) { A -= 2048; Sign = -1; }
++    if (A > 1024) A = 2048 - A;
++    Index = A >> 4;
++    if (Index >= 64)                              // A == 1024 exactly: sin is 1,
++        return Sign * SinTable[64];               // and there is no next entry
++    Frac = A & 15;
++    return Sign * (SinTable[Index] + ((SinTable[Index + 1] - SinTable[Index]) * Frac) / 16);
++}
++
++static INTN CosQ(INTN A) {
++    return SinQ(A + 1024);
++}
++
++// A white disc with a soft edge, drawn by counting how much of each pixel the
++// circle covers. Sixteen samples is plenty at this size and needs no filtering.
++static EG_IMAGE * MakeDot(UINTN Size) {
++    EG_IMAGE *Image;
++    UINTN     x, y, sx, sy, Hits, i;
++    INTN      dx, dy, R2;
++
++    if (Size < 3)
++        return NULL;
++    Image = egCreateImage(Size, Size, TRUE);
++    if (Image == NULL)
++        return NULL;
++    R2 = 16 * (INTN) Size * (INTN) Size;          // radius Size/2, in eighths of a pixel
++    for (y = 0; y < Size; y++) {
++        for (x = 0; x < Size; x++) {
++            Hits = 0;
++            for (sy = 0; sy < 4; sy++) {
++                for (sx = 0; sx < 4; sx++) {
++                    dx = (INTN) (8 * x + 2 * sx + 1) - 4 * (INTN) Size;
++                    dy = (INTN) (8 * y + 2 * sy + 1) - 4 * (INTN) Size;
++                    if (dx * dx + dy * dy <= R2)
++                        Hits++;
++                }
++            }
++            i = y * Size + x;
++            Image->PixelData[i].r = 255;
++            Image->PixelData[i].g = 255;
++            Image->PixelData[i].b = 255;
++            Image->PixelData[i].a = (UINT8) ((Hits * 255) / 16);
++        }
++    }
++    return Image;
++}
++
++// Show the chosen system on its own, the way the menu showed it, with a ring of
++// dots turning underneath, and then get out of the way. Icon is the entry's own
++// image, so this is correct for a system nobody has installed yet.
++VOID ShowHandoffSplash(IN EG_IMAGE *Icon) {
++    EG_IMAGE *Tile, *Dot, *Band;
++    UINTN     Elapsed = 0, Ring, DotSize, Span, TileX, TileY, CentreY, BandX, BandY, d;
++    INTN      Theta, Angle;
++
++    if ((GlobalConfig.HandoffSplash == 0) || !AllowGraphicsMode ||
++        (Icon == NULL) || (GlobalConfig.ScreenBackground == NULL))
++        return;
++
++    SwitchToGraphics();
++    TileSizes[0] = (GlobalConfig.IconSizes[ICON_SIZE_BIG] * 9) / 8;
++    TileSizes[1] = (GlobalConfig.IconSizes[ICON_SIZE_SMALL] * 4) / 3;
++    InitSelection();
++
++    // the photograph, with the menu wiped off it
++    BltImage(GlobalConfig.ScreenBackground, 0, 0);
++
++    // the chosen entry, placed exactly where the menu would put a single one
++    TileX = (UGAWidth + TILE_XSPACING - (TileSizes[0] + TILE_XSPACING)) / 2;
++    TileY = ComputeRow0PosY();
++    Tile = egCropImage(GlobalConfig.ScreenBackground, TileX, TileY, TileSizes[0], TileSizes[0]);
++    if (Tile != NULL) {
++        egFrostImage(Tile, FrostImages[0], GlobalConfig.FrostRadius);
++        if (SelectionImages[0] != NULL)
++            egComposeImage(Tile, SelectionImages[0], 0, 0);
++        BltImageCompositeBadge(Tile, Icon, NULL, TileX, TileY);
++        egFreeImage(Tile);
++    }
++
++    // the ring, where the tool row and the description line would have been
++    Ring    = (110 * UGAHeight) / 2160;
++    DotSize = (20 * UGAHeight) / 2160;
++    if (DotSize < 4)
++        DotSize = 4;
++    CentreY = TileY + TileSizes[0] + TILE_YSPACING + TileSizes[1] + TILE_YSPACING
++              + (75 * UGAHeight) / 2160;
++    Span  = 2 * (Ring + DotSize);
++    BandX = (UGAWidth / 2) - Ring - DotSize;
++    BandY = CentreY - Ring - DotSize;
++    Dot = MakeDot(DotSize);
++
++    if ((Dot != NULL) && (BandY + Span <= UGAHeight)) {
++        while (Elapsed < GlobalConfig.HandoffSplash) {
++            // repaint the whole band from the untouched photograph, so the dots
++            // leave nothing behind them
++            Band = egCropImage(GlobalConfig.ScreenBackground, BandX, BandY, Span, Span);
++            if (Band == NULL)
++                break;
++            for (d = 0; d < SPIN_DOTS; d++) {
++                Theta = (INTN) ((Elapsed * 4096) / SPIN_PERIOD) - (INTN) (d * SPIN_STAGGER);
++                Theta &= 4095;
++                // a = theta - swing * sin(theta), then a quarter turn back so
++                // the dots start at the top
++                Angle = (Theta - (SPIN_SWING * SinQ(Theta)) / 4096 - 1024) & 4095;
++                egComposeImage(Band, Dot,
++                    (UINTN) ((INTN) (Ring + DotSize) + ((INTN) Ring * CosQ(Angle)) / 4096
++                             - (INTN) DotSize / 2),
++                    (UINTN) ((INTN) (Ring + DotSize) + ((INTN) Ring * SinQ(Angle)) / 4096
++                             - (INTN) DotSize / 2));
++            }
++            BltImage(Band, BandX, BandY);
++            egFreeImage(Band);
++            refit_call1_wrapper(BS->Stall, SPIN_FRAME * 1000);
++            Elapsed += SPIN_FRAME;
++        }
++    }
++    egFreeImage(Dot);
++} // VOID ShowHandoffSplash()
++
+ UINTN ComputeRow0PosY(VOID) {
+     return ((UGAHeight / 2) - TileSizes[0] / 2);
+ } // UINTN ComputeRow0PosY()
+@@ -1187,7 +1368,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -342,6 +531,17 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +    if (visible) egDrawImageWithTransparency(Arrow, NULL, PosX, TopY, Arrow->Width, Arrow->Height, NULL);
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
+ 
+diff -ruN a/refind/menu.h b/refind/menu.h
+--- a/refind/menu.h	2024-01-28 19:51:20.000000000 +0100
++++ b/refind/menu.h	2026-08-30 23:49:15.756866383 +0200
+@@ -131,6 +131,7 @@
+ CHAR16* ReadHiddenTags(CHAR16 *VarName);
+ UINTN RunMainMenu(IN REFIT_MENU_SCREEN *Screen, IN CHAR16** DefaultSelection, OUT REFIT_MENU_ENTRY **ChosenEntry);
+ UINTN FindMainMenuItem(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, IN UINTN PosX, IN UINTN PosY);
++VOID ShowHandoffSplash(IN EG_IMAGE *Icon);
+ VOID GenerateWaitList();
+ UINTN WaitForInput(IN UINTN Timeout);
  
 diff -ruN a/refind/scan.c b/refind/scan.c
 --- a/refind/scan.c	2024-04-04 17:18:11.000000000 +0200

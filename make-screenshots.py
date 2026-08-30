@@ -23,6 +23,21 @@ def shot(name, icons, label, scale=(1920, 1080)):
     preview(ASSETS, dst, icons, label, scale=scale)
     print(f"  {name}  {len(icons)} entries")
 
+def handoff(stem, t=0.55):
+    """The screen rEFInd shows on the way to any system, drawn the way it draws it."""
+    import math
+    from plymouth import still, dot, angle, NDOTS, DOT, RING
+    from build import TILE, TILE1, YSP
+    c = still(ASSETS, os.path.join(ASSETS, "icons", f"{stem}.png")).convert("RGBA")
+    d = dot()
+    cx, cy = c.width // 2, R0Y + TILE + YSP + TILE1 + YSP + 75
+    for i in range(NDOTS):
+        a = angle(t, i)
+        c.alpha_composite(d, (int(cx + RING * math.cos(a) - DOT / 2),
+                              int(cy + RING * math.sin(a) - DOT / 2)))
+    return c.convert("RGB")
+
+
 def main():
     if not os.path.exists(os.path.join(ASSETS, "frost_big.png")):
         sys.exit("assets missing -- run ./build.py first")
@@ -46,6 +61,19 @@ def main():
          .save(os.path.join(SHOTS, "detail-glass.png"))
     os.remove(full)
     print("  detail-glass.png  crop at native resolution")
+
+    # The same screen on the way to anything: rEFInd draws it before every
+    # handover, from the entry's own icon, so a system nobody has installed yet
+    # already has its boot logo.
+    grid = Image.new("RGB", (1920, 1080 * 3))
+    for i, stem in enumerate(["os_win8", "os_fedora", "os_unknown"]):
+        frame = handoff(stem).resize((1920, 1080), Image.LANCZOS)
+        grid.paste(frame, (0, i * 1080))
+        if stem == "os_win8":
+            frame.save(os.path.join(SHOTS, "handoff.png"), optimize=True)
+    grid.resize((960, 1620), Image.LANCZOS).save(os.path.join(SHOTS, "handoff-any.png"),
+                                                 optimize=True)
+    print("  handoff.png, handoff-any.png  the same screen for three systems")
 
 if __name__ == "__main__":
     main()
