@@ -89,6 +89,15 @@ the tint arrives with the icon that is composited next. Measured on a
 detailed photograph, `detail` inside the panel falls from 8.53 to 1.86 while
 one pixel outside it stays at 7.97, unchanged.
 
+**The glass has to be weak to read as glass.** Blur and tint compound: a wide
+blur averages the whole panel to one colour and the tint then covers what little
+is left, so the photograph disappears and a pale rectangle is all that remains.
+The first version was `frost_radius 32` over a panel 43% white at the top, and it
+looked painted on. At `14` over a panel of 36 with an 18 veil, measured on a
+detailed photograph, the picture surviving behind the glass goes from 20.8 to
+24.7 while the panel's lightness drops from 101 to 77. Those three numbers are
+`FROST`, `GLASS_A` and `VEIL_A` at the top of `build.py`.
+
 **The plate is inside the icon, not in the background.** rEFInd re-centres the
 row whenever the count changes — with two entries it starts at x=1299, with
 three at x=986 — so anything painted into the background at a fixed position
@@ -118,6 +127,41 @@ graphical picker is translated.
 stock icons are 128px and get scaled up to 218. Windows and Ubuntu are drawn as
 vectors and stay sharp. Dropping a larger PNG into `stock-icons/` and rebuilding
 fixes any of them.
+
+---
+
+## Things move
+
+![The menu arriving](screenshots/anim-in.gif)
+![Choosing something](screenshots/anim-handoff.gif)
+
+The menu rises out of the photograph a tile at a time. Moving the selection
+fades the highlight across rather than snapping it. Choosing something dissolves
+the rest of the menu and sends that tile travelling to the middle, where the ring
+picks up.
+
+Three things make that affordable at 3840×2160. A tile is 617×617 — a fortieth
+of the screen — so only what changes is touched. The frost behind a tile depends
+on where the tile is, not on which frame it is, so it is computed once per
+position instead of once per frame. And `egCopyScreenArea()` reads the
+framebuffer back, so a cross-fade never recomposes what is already on screen:
+moving the selection costs the same two blurs it always did.
+
+**Nothing here is ever allowed to get in the way.** Every loop stops the instant
+a keystroke is waiting:
+
+```c
+static BOOLEAN KeyIsWaiting(VOID) {
+    return (refit_call1_wrapper(BS->CheckEvent, ST->ConIn->WaitForKey) == EFI_SUCCESS);
+}
+```
+
+so browsing slowly is smooth and holding an arrow key is exactly as fast as it
+was before any of this existed. `animations false` turns the lot off.
+
+`animation-preview.py` renders all of it to a GIF using the same integer easing
+`menu.c` uses — 0..256, cubic, no floating point — so timing can be looked at
+without building a bootloader.
 
 ---
 
@@ -455,7 +499,28 @@ a silent pass-through, an interrupted boot leaves `recordfail=1` in `grubenv`
 and `/etc/grub.d/00_header` then forces a 30-second visible menu. Set
 `GRUB_RECORDFAIL_TIMEOUT=0`.
 
-**9. Config paths have two different bases.** `banner`, `font` and `selection_*`
+**9. rEFInd's Makefile does not track header dependencies.** There is no `-MMD`
+anywhere in it, so editing a header and running `make` rebuilds nothing that
+included it. Add a field to `REFIT_CONFIG` in `global.h`, rebuild without
+cleaning, and `config.c` gets the new layout while `main.c` — which *defines*
+`GlobalConfig` — keeps the old one. The binary then reserves 16 bytes too few and
+the parser writes past the end of the object, in a bootloader. It is invisible:
+the fields were appended, so every existing offset still lines up and everything
+appears to work.
+
+What it looks like, if you go looking:
+
+```
+$ nm -S --defined-only refind/refind_x64.so | grep GlobalConfig
+00000000000326e0 0000000000000250 D GlobalConfig     # incremental
+00000000000326e0 0000000000000260 D GlobalConfig     # after make clean
+```
+
+`build-refind.sh` runs `make clean` every time for this reason. It was caught by
+diffing a binary built from a patched pristine tree against the installed one and
+chasing the one byte that was not the PE timestamp.
+
+**10. Config paths have two different bases.** `banner`, `font` and `selection_*`
 are relative to the directory holding `refind_x64.efi`; `icon` inside a
 `menuentry` is absolute from the ESP root. Mixing them up fails **silently** —
 the file is simply never loaded.

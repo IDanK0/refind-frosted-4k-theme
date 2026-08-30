@@ -217,8 +217,8 @@ diff -ruN a/Make.common b/Make.common
 I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -ruN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-08-30 23:49:15.756825053 +0200
-@@ -800,6 +800,22 @@
++++ b/refind/config.c	2026-08-31 00:07:11.901330527 +0200
+@@ -800,6 +800,25 @@
                  }
              } // for (graphics_on tokens)
  
@@ -226,6 +226,9 @@ diff -ruN a/refind/config.c b/refind/config.c
 +            HandleInt(TokenList, TokenCount, &(GlobalConfig.FrostRadius));
 +            if (GlobalConfig.FrostRadius > 200)
 +                GlobalConfig.FrostRadius = 200;
++
++        } else if (MyStriCmp(TokenList[0], L"animations")) {
++            GlobalConfig.Animations = HandleBoolean(TokenList, TokenCount);
 +
 +        } else if (MyStriCmp(TokenList[0], L"handoff_splash")) {
 +            HandleInt(TokenList, TokenCount, &(GlobalConfig.HandoffSplash));
@@ -243,8 +246,8 @@ diff -ruN a/refind/config.c b/refind/config.c
  
 diff -ruN a/refind/global.h b/refind/global.h
 --- a/refind/global.h	2024-04-04 21:48:57.000000000 +0200
-+++ b/refind/global.h	2026-08-30 23:49:15.756705539 +0200
-@@ -393,6 +393,12 @@
++++ b/refind/global.h	2026-08-31 00:07:11.901215252 +0200
+@@ -393,6 +393,13 @@
     UINT32_LIST      *CsrValues;
     UINTN            ShowTools[NUM_TOOLS];
     CHAR8            ScanFor[NUM_SCAN_OPTIONS]; // codes of types of loaders for which to scan
@@ -252,6 +255,7 @@ diff -ruN a/refind/global.h b/refind/global.h
 +   // under the translucent parts of an icon. 0 disables it.
 +   UINTN            FrostRadius;
 +   UINTN            HandoffSplash;
++   BOOLEAN          Animations;
 +   CHAR16           *FrostMaskBigFileName;
 +   CHAR16           *FrostMaskSmallFileName;
  } REFIT_CONFIG;
@@ -278,7 +282,7 @@ diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
      StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
 diff -ruN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-30 23:56:11.941014587 +0200
++++ b/refind/menu.c	2026-08-31 00:08:13.048849541 +0200
 @@ -97,6 +97,7 @@
  #define TILE_YSPACING (16)
  
@@ -342,24 +346,253 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1083,13 +1105,15 @@
-         Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos,
-                                  SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height);
-         if (Background) {
-+            egFrostImage(Background, FrostImages[Entry->Row], GlobalConfig.FrostRadius);
-             egComposeImage(Background, SelectionImages[Entry->Row], 0, 0);
-             BltImageCompositeBadge(Background, Entry->Image, Entry->BadgeImage, XPos, YPos);
-             egFreeImage(Background);
-         } // if
-     } else { // Image not selected; copy background
-         egDrawImageWithTransparency(Entry->Image, Entry->BadgeImage, XPos, YPos,
+@@ -1074,31 +1096,218 @@
+ // graphical main menu style
+ //
+ 
++//
++// Animation
++//
++// rEFInd draws straight into a linear framebuffer, so anything that moves has to
++// be composed and blitted by hand. Three things make that affordable at
++// 3840x2160. A tile is 617x617 -- a fortieth of the screen -- so only the parts
++// that change are touched. The frosted background behind a tile depends on where
++// the tile is, not on what frame it is, so it is computed once per position
++// rather than once per frame. And egCopyScreenArea() can read the framebuffer
++// back, so a cross-fade never has to recompose what is already on the screen.
++//
++// Nothing here is ever allowed to get in the way: every loop stops the moment a
++// keystroke is waiting, so holding an arrow key moves exactly as fast as it did
++// before any of this existed.
++
++#define ANIM_IN_FRAMES   (9)      // the menu arriving
++#define ANIM_SEL_FRAMES  (5)      // the selection moving
++#define ANIM_OUT_FRAMES  (7)      // the rest of the menu leaving
++#define ANIM_MOVE_FRAMES (14)     // the chosen tile travelling to the middle
++#define ANIM_FRAME_US    (10000)
++#define ANIM_MAX_TILES   (24)
++
++static BOOLEAN MenuHasAppeared = FALSE;
++static UINTN   ChosenX = 0, ChosenY = 0;
++static BOOLEAN ChosenKnown = FALSE;
++
++// Is the user already ahead of us?
++static BOOLEAN KeyIsWaiting(VOID) {
++    return (refit_call1_wrapper(BS->CheckEvent, ST->ConIn->WaitForKey) == EFI_SUCCESS);
++}
++
++// Step t of n, eased so it leaves quickly and arrives gently. Returns 0..256.
++static UINTN EaseOut(UINTN t, UINTN n) {
++    UINTN Left;
++
++    if ((n == 0) || (t >= n))
++        return 256;
++    Left = 256 - (256 * t) / n;
++    return 256 - (Left * Left * Left) / (256 * 256);
++}
++
++// Put From mixed with To on the screen, Alpha of 256 being all To.
++static VOID BlendBlit(IN EG_IMAGE *From, IN EG_IMAGE *To, IN UINTN Alpha,
++                      IN UINTN XPos, IN UINTN YPos) {
++    EG_IMAGE *Mix;
++    UINTN     i, Count, Rev;
++
++    if ((From == NULL) || (To == NULL))
++        return;
++    if (Alpha >= 256) { BltImage(To, XPos, YPos);   return; }
++    if (Alpha == 0)   { BltImage(From, XPos, YPos); return; }
++    if ((From->Width != To->Width) || (From->Height != To->Height))
++        return;
++    Mix = egCreateImage(From->Width, From->Height, FALSE);
++    if (Mix == NULL)
++        return;
++    Count = Mix->Width * Mix->Height;
++    Rev   = 256 - Alpha;
++    for (i = 0; i < Count; i++) {
++        Mix->PixelData[i].r = (UINT8) (((UINTN) From->PixelData[i].r * Rev +
++                                        (UINTN) To->PixelData[i].r * Alpha) >> 8);
++        Mix->PixelData[i].g = (UINT8) (((UINTN) From->PixelData[i].g * Rev +
++                                        (UINTN) To->PixelData[i].g * Alpha) >> 8);
++        Mix->PixelData[i].b = (UINT8) (((UINTN) From->PixelData[i].b * Rev +
++                                        (UINTN) To->PixelData[i].b * Alpha) >> 8);
++        Mix->PixelData[i].a = 0;
++    }
++    BltImage(Mix, XPos, YPos);
++    egFreeImage(Mix);
++}
++
++// A finished tile, not yet on the screen: the photograph behind it, frosted
++// where the glass is, the highlight if it is the selected one, then the icon.
++// Everything that draws a tile goes through this, so a tile in an animation and
++// a tile sitting still are the same pixels.
++static EG_IMAGE * ComposeTile(IN EG_IMAGE *Icon, IN EG_IMAGE *Badge, IN UINTN Row,
++                              IN BOOLEAN Selected, IN UINTN XPos, IN UINTN YPos) {
++    EG_IMAGE *Tile;
++    UINTN     W, H, CW = 0, CH = 0, OffX = 0, OffY = 0;
++
++    if (SelectionImages[Row] == NULL)
++        return NULL;
++    W = SelectionImages[Row]->Width;
++    H = SelectionImages[Row]->Height;
++    Tile = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos, W, H);
++    if (Tile == NULL)
++        return NULL;
++    egFrostImage(Tile, FrostImages[Row], GlobalConfig.FrostRadius);
++    if (Selected && DrawSelection)
++        egComposeImage(Tile, SelectionImages[Row], 0, 0);
++    if (Icon != NULL) {
++        CW = (Icon->Width  > W) ? W : Icon->Width;
++        CH = (Icon->Height > H) ? H : Icon->Height;
++        OffX = (W - CW) >> 1;
++        OffY = (H - CH) >> 1;
++        egComposeImage(Tile, Icon, OffX, OffY);
++    }
++    if ((Badge != NULL) && ((Badge->Width + 8) < CW) && ((Badge->Height + 8) < CH))
++        egComposeImage(Tile, Badge, OffX + CW - 8 - Badge->Width,
++                                    OffY + CH - 8 - Badge->Height);
++    return Tile;
++}
++
++static EG_IMAGE * ComposeMenuEntry(REFIT_MENU_ENTRY *Entry, BOOLEAN Selected,
++                                   UINTN XPos, UINTN YPos) {
++    if (Entry == NULL)
++        return NULL;
++    return ComposeTile(Entry->Image, Entry->BadgeImage, Entry->Row, Selected, XPos, YPos);
++}
++
+ static VOID DrawMainMenuEntry(REFIT_MENU_ENTRY *Entry, BOOLEAN selected, UINTN XPos, UINTN YPos)
+ {
+-    EG_IMAGE *Background;
++    EG_IMAGE *Tile;
+ 
+-    // if using pointer, don't draw selection image when not hovering
+-    if (selected && DrawSelection) {
+-        Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos,
+-                                 SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height);
+-        if (Background) {
+-            egComposeImage(Background, SelectionImages[Entry->Row], 0, 0);
+-            BltImageCompositeBadge(Background, Entry->Image, Entry->BadgeImage, XPos, YPos);
+-            egFreeImage(Background);
+-        } // if
+-    } else { // Image not selected; copy background
+-        egDrawImageWithTransparency(Entry->Image, Entry->BadgeImage, XPos, YPos,
 -                                    SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height);
-+                                    SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height,
-+                                    FrostImages[Entry->Row]);
-     } // if/else
+-    } // if/else
++    Tile = ComposeMenuEntry(Entry, selected, XPos, YPos);
++    if (Tile != NULL) {
++        BltImage(Tile, XPos, YPos);
++        egFreeImage(Tile);
++    }
++    if (selected) {                       // where to fly out from, later
++        ChosenX = XPos; ChosenY = YPos; ChosenKnown = TRUE;
++    }
  } // VOID DrawMainMenuEntry()
  
-@@ -1174,6 +1198,198 @@
++// The menu arriving: each tile rises out of the photograph a beat after the one
++// to its left. Composed once each, then only mixed, so the cost per frame is
++// arithmetic rather than blur.
++static VOID AnimateMenuIn(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
++                          IN UINTN *itemPosX, IN UINTN row0PosY, IN UINTN row1PosY) {
++    EG_IMAGE *Tile[ANIM_MAX_TILES], *Back[ANIM_MAX_TILES];
++    UINTN     X[ANIM_MAX_TILES], Y[ANIM_MAX_TILES];
++    UINTN     Count = 0, f, i, Alpha, Start;
++    INTN      e;
++
++    for (e = State->FirstVisible; (e <= State->MaxIndex) && (Count < ANIM_MAX_TILES); e++) {
++        if (Screen->Entries[e]->Row == 0) {
++            if (e > State->LastVisible)
++                continue;
++            X[Count] = itemPosX[e - State->FirstVisible];
++            Y[Count] = row0PosY;
++        } else {
++            X[Count] = itemPosX[e];
++            Y[Count] = row1PosY;
++        }
++        Tile[Count] = ComposeMenuEntry(Screen->Entries[e],
++                                       (e == State->CurrentSelection), X[Count], Y[Count]);
++        Back[Count] = egCropImage(GlobalConfig.ScreenBackground, X[Count], Y[Count],
++                                  (Tile[Count] != NULL) ? Tile[Count]->Width : 1,
++                                  (Tile[Count] != NULL) ? Tile[Count]->Height : 1);
++        if ((Tile[Count] == NULL) || (Back[Count] == NULL)) {
++            egFreeImage(Tile[Count]);
++            egFreeImage(Back[Count]);
++            continue;
++        }
++        Count++;
++    }
++
++    for (f = 1; (f <= ANIM_IN_FRAMES + Count) && !KeyIsWaiting(); f++) {
++        for (i = 0; i < Count; i++) {
++            Start = i;
++            Alpha = (f > Start) ? EaseOut(f - Start, ANIM_IN_FRAMES) : 0;
++            BlendBlit(Back[i], Tile[i], Alpha, X[i], Y[i]);
++        }
++        refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++    }
++    for (i = 0; i < Count; i++) {
++        egFreeImage(Tile[i]);
++        egFreeImage(Back[i]);
++    }
++} // VOID AnimateMenuIn()
++
++// The selection moving: the highlight fades off one tile and onto the other.
++// What is already on the screen is read back rather than recomposed, so this
++// costs the same two blurs the instant version always cost.
++static VOID AnimateSelection(IN REFIT_MENU_ENTRY *Old, IN UINTN OX, IN UINTN OY,
++                             IN REFIT_MENU_ENTRY *New, IN UINTN NX, IN UINTN NY) {
++    EG_IMAGE *WasOld, *WasNew, *ToOld, *ToNew;
++    UINTN     f, Alpha;
++
++    ToOld = ComposeMenuEntry(Old, FALSE, OX, OY);
++    ToNew = ComposeMenuEntry(New, TRUE,  NX, NY);
++    if (!GlobalConfig.Animations || KeyIsWaiting() || (ToOld == NULL) || (ToNew == NULL)) {
++        if (ToOld != NULL) BltImage(ToOld, OX, OY);
++        if (ToNew != NULL) BltImage(ToNew, NX, NY);
++    } else {
++        WasOld = egCopyScreenArea(OX, OY, ToOld->Width, ToOld->Height);
++        WasNew = egCopyScreenArea(NX, NY, ToNew->Width, ToNew->Height);
++        for (f = 1; (f <= ANIM_SEL_FRAMES) && !KeyIsWaiting(); f++) {
++            Alpha = EaseOut(f, ANIM_SEL_FRAMES);
++            BlendBlit(WasOld, ToOld, Alpha, OX, OY);
++            BlendBlit(WasNew, ToNew, Alpha, NX, NY);
++            refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++        }
++        BltImage(ToOld, OX, OY);
++        BltImage(ToNew, NX, NY);
++        egFreeImage(WasOld);
++        egFreeImage(WasNew);
++    }
++    egFreeImage(ToOld);
++    egFreeImage(ToNew);
++    ChosenX = NX; ChosenY = NY; ChosenKnown = TRUE;
++} // VOID AnimateSelection()
++
+ static VOID PaintAll(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, UINTN *itemPosX,
+                      UINTN row0PosY, UINTN row1PosY, UINTN textPosY) {
+     INTN i;
+ 
+     if (Screen->Entries[State->CurrentSelection]->Row == 0)
+         AdjustScrollState(State);
++    if (GlobalConfig.Animations && !MenuHasAppeared && !KeyIsWaiting())
++        AnimateMenuIn(Screen, State, itemPosX, row0PosY, row1PosY);
++    MenuHasAppeared = TRUE;
+     for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
+         if (Screen->Entries[i]->Row == 0) {
+             if (i <= State->LastVisible) {
+@@ -1150,10 +1359,8 @@
+             XSelectCur = State->CurrentSelection;
+             YPosCur = row1PosY;
+         } // if/else
+-        DrawMainMenuEntry(Screen->Entries[State->PreviousSelection], FALSE,
+-                          itemPosX[XSelectPrev], YPosPrev);
+-        DrawMainMenuEntry(Screen->Entries[State->CurrentSelection], TRUE,
+-                          itemPosX[XSelectCur], YPosCur);
++        AnimateSelection(Screen->Entries[State->PreviousSelection], itemPosX[XSelectPrev], YPosPrev,
++                         Screen->Entries[State->CurrentSelection], itemPosX[XSelectCur], YPosCur);
+         if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
+             DrawTextWithTransparency(L"", 0, textPosY);
+             DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
+@@ -1174,6 +1381,269 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -463,6 +696,77 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +    return 0;
 +}
 +
++// The menu leaving. Everything except the tile you chose dissolves back into the
++// photograph, and then that tile travels to the middle, where the ring is about
++// to start turning. It is the same tile the whole way: the frost is recomputed
++// at each position, because glass shows what is behind it and what is behind it
++// changes as it moves.
++//
++// Each frame is one blit of a box holding both the old position and the new, so
++// the tile is never briefly absent from the screen.
++static VOID AnimateHandoff(IN EG_IMAGE *Icon, IN UINTN DestX, IN UINTN DestY) {
++    EG_IMAGE *Strip, *StripBg, *Held, *Tile, *Box, *Rest;
++    UINTN     Size, StripY, StripH, f, Alpha, BoxX, BoxY, BoxW, BoxH;
++    INTN      FromX, FromY, X, Y, PrevX, PrevY;
++
++    Size   = TileSizes[0];
++    StripY = ComputeRow0PosY();
++    StripH = Size + TILE_YSPACING + TileSizes[1] + TILE_YSPACING + 4 * egGetFontHeight();
++    if (StripY + StripH > UGAHeight)
++        StripH = UGAHeight - StripY;
++
++    // 1. the rest of the menu dissolves, the chosen tile held in place over it
++    Strip   = egCopyScreenArea(0, StripY, UGAWidth, StripH);
++    StripBg = egCropImage(GlobalConfig.ScreenBackground, 0, StripY, UGAWidth, StripH);
++    Held    = egCopyScreenArea(ChosenX, ChosenY, Size, Size);
++    if ((Strip != NULL) && (StripBg != NULL) && (Held != NULL)) {
++        for (f = 1; f <= ANIM_OUT_FRAMES; f++) {
++            Alpha = EaseOut(f, ANIM_OUT_FRAMES);
++            BlendBlit(Strip, StripBg, Alpha, 0, StripY);
++            BltImage(Held, ChosenX, ChosenY);
++            refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++        }
++    }
++    egFreeImage(Strip);
++    egFreeImage(StripBg);
++    egFreeImage(Held);
++
++    // whatever the strip did not reach -- hints along the bottom, if they are shown
++    if (StripY + StripH < UGAHeight) {
++        Rest = egCropImage(GlobalConfig.ScreenBackground, 0, StripY + StripH,
++                           UGAWidth, UGAHeight - StripY - StripH);
++        if (Rest != NULL) {
++            BltImage(Rest, 0, StripY + StripH);
++            egFreeImage(Rest);
++        }
++    }
++
++    // 2. the tile travels
++    FromX = (INTN) ChosenX; FromY = (INTN) ChosenY;
++    PrevX = FromX;          PrevY = FromY;
++    for (f = 1; f <= ANIM_MOVE_FRAMES; f++) {
++        Alpha = EaseOut(f, ANIM_MOVE_FRAMES);
++        X = FromX + (((INTN) DestX - FromX) * (INTN) Alpha) / 256;
++        Y = FromY + (((INTN) DestY - FromY) * (INTN) Alpha) / 256;
++
++        BoxX = (UINTN) ((X < PrevX) ? X : PrevX);
++        BoxY = (UINTN) ((Y < PrevY) ? Y : PrevY);
++        BoxW = (UINTN) (((X > PrevX) ? X : PrevX) + (INTN) Size) - BoxX;
++        BoxH = (UINTN) (((Y > PrevY) ? Y : PrevY) + (INTN) Size) - BoxY;
++
++        Box  = egCropImage(GlobalConfig.ScreenBackground, BoxX, BoxY, BoxW, BoxH);
++        Tile = ComposeTile(Icon, NULL, 0, TRUE, (UINTN) X, (UINTN) Y);
++        if ((Box != NULL) && (Tile != NULL)) {
++            egComposeImage(Box, Tile, (UINTN) X - BoxX, (UINTN) Y - BoxY);
++            BltImage(Box, BoxX, BoxY);
++        }
++        egFreeImage(Box);
++        egFreeImage(Tile);
++        PrevX = X; PrevY = Y;
++        refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++    }
++} // VOID AnimateHandoff()
++
 +// Show the chosen system on its own, the way the menu showed it, with a ring of
 +// dots turning underneath, and then get out of the way. Icon is the entry's own
 +// image, so this is correct for a system nobody has installed yet.
@@ -507,18 +811,18 @@ diff -ruN a/refind/menu.c b/refind/menu.c
 +    if (CentreY < (INTN) (Ring + DotSize))
 +        CentreY = (INTN) (Ring + DotSize);
 +
-+    // the photograph, with the menu wiped off it
-+    BltImage(GlobalConfig.ScreenBackground, 0, 0);
-+
-+    // the chosen entry
-+    Tile = egCropImage(GlobalConfig.ScreenBackground, TileX, (UINTN) TileY,
-+                       TileSizes[0], TileSizes[0]);
-+    if (Tile != NULL) {
-+        egFrostImage(Tile, FrostImages[0], GlobalConfig.FrostRadius);
-+        if (SelectionImages[0] != NULL)
-+            egComposeImage(Tile, SelectionImages[0], 0, 0);
-+        BltImageCompositeBadge(Tile, Icon, NULL, TileX, (UINTN) TileY);
-+        egFreeImage(Tile);
++    if (GlobalConfig.Animations && ChosenKnown &&
++        ((ChosenX != TileX) || (ChosenY != (UINTN) TileY))) {
++        // travel there from where the menu had it
++        AnimateHandoff(Icon, TileX, (UINTN) TileY);
++    } else {
++        // the photograph, with the menu wiped off it, and the entry on top
++        BltImage(GlobalConfig.ScreenBackground, 0, 0);
++        Tile = ComposeTile(Icon, NULL, 0, TRUE, TileX, (UINTN) TileY);
++        if (Tile != NULL) {
++            BltImage(Tile, TileX, (UINTN) TileY);
++            egFreeImage(Tile);
++        }
 +    }
 +
 +    // the ring
@@ -558,7 +862,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1403,7 @@
+@@ -1187,7 +1657,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);

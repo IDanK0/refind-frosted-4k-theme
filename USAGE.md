@@ -144,6 +144,11 @@ size of the frosted plate baked into every icon. If you change them, run
 `./build.py` so the icons, the selection highlight and the glass stencil are
 redrawn to match.
 
+`animations` (true) makes the menu arrive, the selection fade across and the
+chosen tile travel to the middle instead of jumping. All of it stops the moment a
+keystroke is waiting, so holding an arrow key is as fast as it ever was; `false`
+turns it off.
+
 `handoff_splash` (1800) is how many milliseconds the chosen system is shown on
 its own before rEFInd hands over — the boot logo of everything this machine
 boots, since rEFInd is the only thing that runs before all of them. 1800 is one

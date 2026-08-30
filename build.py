@@ -32,7 +32,16 @@ R0Y    = (H // 2) - TILE // 2     # the OS row is always vertically centred
 MAXVIS = W // (TILE + XSP) - 1    # entries rEFInd will show without scrolling
 
 # inside the BIG icon canvas
-FROST     = 32                    # frost_radius in refind.conf; the preview matches it
+FROST     = 14                    # frost_radius in refind.conf; the preview matches it
+GLASS_A   = 36                    # how much of the panel's own tint there is
+VEIL_A    = 18                    # the raking light across the top of it
+# These three decide whether the panel reads as glass or as a painted tile. Too
+# much blur and too much tint compound: a wide blur averages the whole panel to
+# one colour and the tint then covers what little is left, so the photograph
+# disappears and a pale rectangle is all that remains. Measured on a detailed
+# photograph, going from (32, 64, 46) to (14, 36, 18) lifts how much of the
+# picture survives behind the glass from 20.8 to 24.4 and drops the panel's
+# lightness from 101 to 79.
 PLATE     = 340                   # frosted tile
 PLATE_Y   = 64                    # pushed up to leave room for the name
 LOGO      = 218
@@ -127,9 +136,9 @@ def plate(s):
     — leaving this a plain translucent panel with no compensation of any kind."""
     p = Image.new("RGBA", (s * SS, s * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(p); r = int(s * SS * .19)
-    d.rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=(214, 226, 248, 64))
+    d.rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=(214, 226, 248, GLASS_A))
     g = Image.new("L", (1, s * SS))
-    g.putdata([int(46 * (1 - i / (s * SS))) for i in range(s * SS)])   # raking light
+    g.putdata([int(VEIL_A * (1 - i / (s * SS))) for i in range(s * SS)])   # raking light
     veil = Image.new("RGBA", (s*SS, s*SS), (255, 255, 255, 255))
     veil.putalpha(g.resize((s*SS, s*SS)))
     m = Image.new("L", (s*SS, s*SS), 0)
