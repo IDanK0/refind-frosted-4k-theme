@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """Generate every asset of the rEFInd theme from a single background photo.
 
-Geometry is taken from rEFInd's own layout arithmetic (refind/menu.c), so the
-frosted tiles and the OS labels — which are baked into the background image —
-land exactly under the icons rEFInd will draw.
+Nothing is baked into the background any more. The frosted plate and the OS
+name live inside each icon, so they travel with the entry: rEFInd re-centres
+the row every time the number of entries changes
+
+    row0PosX = (UGAWidth + 8 - (TileSizes[0] + 8) * row0Count) / 2
+
+and anything painted into the background at a fixed position would be left
+behind. Putting the plate in the icon makes the theme correct for two entries,
+for five, and for whatever a USB stick adds tomorrow.
 
     ./build.py                                  # library default
     ./build.py --background library/desert-skies.jpg --darken 60
-    ./build.py --background ~/mine.png --darken 0 --preview-only
+    ./build.py --background ~/mine.png --darken auto
 """
-import argparse, json, math, os, sys
+import argparse, glob, json, math, os, sys
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance, ImageStat
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -18,27 +24,46 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 W, H = 3840, 2160
 XSP, YSP = 8, 16          # TILE_XSPACING / TILE_YSPACING, #define'd in menu.c
 SS = 4                    # supersampling for the vector artwork
-BIG, SMALL, NTOOLS = 549, 48, 5
+BIG, SMALL = 549, 48
 
-TILE  = (BIG * 9) // 8            # TileSizes[0] = big_icon_size * 9/8
-TILE1 = (SMALL * 4) // 3          # TileSizes[1] = small_icon_size * 4/3
-R0X   = (W + XSP - (TILE + XSP) * 2) // 2
-R0Y   = (H // 2) - TILE // 2      # the OS row is always vertically centred
-R1Y   = R0Y + TILE + YSP
-R1X   = (W + XSP - (TILE1 + XSP) * NTOOLS) // 2
-TXTY  = R1Y + TILE1 + YSP
-POS   = [R0X, R0X + TILE + XSP]
-CEN   = [p + TILE // 2 for p in POS]
-OFF   = (TILE - BIG) // 2
-MAXVIS = W // (TILE + XSP) - 1
+TILE   = (BIG * 9) // 8           # TileSizes[0] = big_icon_size * 9/8
+TILE1  = (SMALL * 4) // 3         # TileSizes[1] = small_icon_size * 4/3
+R0Y    = (H // 2) - TILE // 2     # the OS row is always vertically centred
+MAXVIS = W // (TILE + XSP) - 1    # entries rEFInd will show without scrolling
 
-PLATE, LOGO_VIS, F_OS, LBL_Y = 340, 218, 66, 1290
+# inside the BIG icon canvas
+PLATE     = 340                   # frosted tile
+PLATE_Y   = 64                    # pushed up to leave room for the name
+LOGO      = 218
+NAME_SIZE = 56
+NAME_Y    = PLATE_Y + PLATE + 22
+ICON_OFF  = (TILE - BIG) // 2     # icon is centred in the tile
+PLATE_X   = (BIG - PLATE) // 2
+
 FONT_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-# luminance is sampled here to warn when a photo will wash the tiles out
-BOX = (1299, 850, 2541, 1400)
-# luminance the Mojave original sat at; the target for --darken auto
-TARGET_LUM = 30.0
+BOX = (1299, 850, 2541, 1400)     # strip sampled to judge how bright a photo is
+TARGET_LUM = 30.0                 # what --darken auto aims for
+
+# rEFInd matches an icon by OS name; give each one a readable label so a
+# system detected next year arrives already named.
+NAMES = {
+    "arch": "Arch Linux", "artful": "Ubuntu", "bionic": "Ubuntu", "centos": "CentOS",
+    "chakra": "Chakra", "chrome": "ChromeOS", "clover": "Clover",
+    "crunchbang": "CrunchBang", "debian": "Debian", "devuan": "Devuan",
+    "elementary": "elementary OS", "endeavouros": "EndeavourOS", "fedora": "Fedora",
+    "freebsd": "FreeBSD", "frugalware": "Frugalware", "gentoo": "Gentoo",
+    "gummiboot": "systemd-boot", "haiku": "Haiku", "hwtest": "Hardware Test",
+    "kubuntu": "Kubuntu", "legacy": "Legacy Boot", "linux": "Linux",
+    "linuxmint": "Linux Mint", "lubuntu": "Lubuntu", "mac": "macOS",
+    "mageia": "Mageia", "mandriva": "Mandriva", "manjaro": "Manjaro",
+    "netbsd": "NetBSD", "network": "Network", "opensuse": "openSUSE",
+    "redhat": "Red Hat", "refind": "rEFInd", "refit": "rEFIt",
+    "slackware": "Slackware", "suse": "SUSE", "systemd": "systemd-boot",
+    "trusty": "Ubuntu", "ubuntu": "Ubuntu", "uefi": "UEFI", "unknown": "",
+    "void": "Void Linux", "win": "Windows", "win8": "Windows",
+    "xenial": "Ubuntu", "xubuntu": "Xubuntu", "zesty": "Ubuntu",
+}
 
 # ------------------------------------------------------------------ artwork
 def aa(n, fn):
@@ -64,18 +89,18 @@ def logo_ubuntu(d, S):
 
 GR = (232, 238, 250, 255)
 def t_about(d, S):
-    m = S * 0.09; d.ellipse([m, m, S - m, S - m], outline=GR, width=int(S * 0.075))
-    d.ellipse([S * .44, S * .24, S * .56, S * .36], fill=GR)
-    d.rounded_rectangle([S * .44, S * .43, S * .56, S * .76], radius=S * .06, fill=GR)
+    m = S * .09; d.ellipse([m, m, S - m, S - m], outline=GR, width=int(S * .075))
+    d.ellipse([S*.44, S*.24, S*.56, S*.36], fill=GR)
+    d.rounded_rectangle([S*.44, S*.43, S*.56, S*.76], radius=S*.06, fill=GR)
 def t_hidden(d, S):
     d.polygon([(S*.14,S*.50),(S*.50,S*.12),(S*.88,S*.12),(S*.88,S*.50),(S*.52,S*.88),(S*.14,S*.50)],
-              outline=GR, width=int(S * .075))
-    d.ellipse([S*.68,S*.22,S*.80,S*.34], fill=GR)
+              outline=GR, width=int(S*.075))
+    d.ellipse([S*.68, S*.22, S*.80, S*.34], fill=GR)
 def t_power(d, S):
-    m = S * .16; d.arc([m, m, S - m, S - m], -55, 235, fill=GR, width=int(S * .085))
-    d.rounded_rectangle([S*.455,S*.10,S*.545,S*.46], radius=S*.045, fill=GR)
+    m = S * .16; d.arc([m, m, S - m, S - m], -55, 235, fill=GR, width=int(S*.085))
+    d.rounded_rectangle([S*.455, S*.10, S*.545, S*.46], radius=S*.045, fill=GR)
 def t_reset(d, S):
-    m = S * .16; d.arc([m, m, S - m, S - m], 120, 60, fill=GR, width=int(S * .085))
+    m = S * .16; d.arc([m, m, S - m, S - m], 120, 60, fill=GR, width=int(S*.085))
     d.polygon([(S*.80,S*.10),(S*.90,S*.42),(S*.58,S*.34)], fill=GR)
 def t_chip(d, S):
     a, b = S * .26, S * .74
@@ -86,36 +111,54 @@ def t_chip(d, S):
         d.rectangle([S*t-S*.022, b, S*t+S*.022, S*.90], fill=GR)
         d.rectangle([S*.10, S*t-S*.022, a, S*t+S*.022], fill=GR)
         d.rectangle([b, S*t-S*.022, S*.90, S*t+S*.022], fill=GR)
-
-# order matters: it is the order rEFInd adds the default tools
 TOOLS = [(t_about, "func_about.png"), (t_hidden, "func_hidden.png"),
          (t_power, "func_shutdown.png"), (t_reset, "func_reset.png"),
          (t_chip,  "func_firmware.png")]
 
 # -------------------------------------------------------------------- glass
-def frost(img, cx, cy, s):
-    """Bake a frosted panel: a real blur of the photo, done once, at zero
-    runtime cost. rEFInd has no compositor, so live blur is impossible."""
-    x, y = cx - s // 2, cy - s // 2
-    sh = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(sh).rounded_rectangle([x+6, y+14, x+s+6, y+s+14], radius=int(s*.19), fill=90)
-    img.paste(Image.new("RGB", (W, H), (4, 6, 14)), (0, 0), sh.filter(ImageFilter.GaussianBlur(26)))
-    p = img.crop((x, y, x + s, y + s)).filter(ImageFilter.GaussianBlur(34))
-    p = ImageEnhance.Brightness(p).enhance(1.34)
-    p = Image.blend(p, Image.new("RGB", (s, s), (226, 233, 250)), 0.19)
-    gr = Image.new("L", (1, s)); gr.putdata([int(52 * (1 - i / s)) for i in range(s)])
-    p = Image.composite(Image.new("RGB", (s, s), (255,) * 3), p, gr.resize((s, s)))
-    m = Image.new("L", (s * SS, s * SS), 0)
-    ImageDraw.Draw(m).rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=int(s*SS*.19), fill=255)
-    img.paste(p, (x, y), m.resize((s, s), Image.LANCZOS).filter(ImageFilter.GaussianBlur(1.6)))
-    rm = Image.new("RGBA", (s * SS, s * SS), (0, 0, 0, 0))
-    ImageDraw.Draw(rm).rounded_rectangle([3, 3, s*SS-4, s*SS-4], radius=int(s*SS*.19),
-                                         outline=(255, 255, 255, 150), width=5 * SS)
-    rm = rm.resize((s, s), Image.LANCZOS)
-    fade = Image.new("L", (1, s)); fade.putdata([int(255 * (1 - .72 * i / s)) for i in range(s)])
-    img.paste(Image.new("RGB", (s, s), (255,) * 3), (x, y),
-              Image.composite(rm.split()[3], Image.new("L", (s, s), 0), fade.resize((s, s))))
+def plate(s):
+    """A frosted panel that does not know what is behind it.
 
+    The previous version blurred the actual background, which looked better but
+    only worked because the tiles never moved. This one lets the background
+    through, lightened and veiled, so it is correct wherever rEFInd puts it."""
+    p = Image.new("RGBA", (s * SS, s * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(p); r = int(s * SS * .19)
+    d.rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=(222, 232, 252, 104))
+    g = Image.new("L", (1, s * SS))
+    g.putdata([int(78 * (1 - i / (s * SS))) for i in range(s * SS)])   # raking light
+    veil = Image.new("RGBA", (s*SS, s*SS), (255, 255, 255, 255))
+    veil.putalpha(g.resize((s*SS, s*SS)))
+    m = Image.new("L", (s*SS, s*SS), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=255)
+    p.alpha_composite(Image.composite(veil, Image.new("RGBA", (s*SS, s*SS), (0,0,0,0)), m))
+    ImageDraw.Draw(p).rounded_rectangle([3, 3, s*SS-4, s*SS-4], radius=r,
+                                        outline=(255, 255, 255, 170), width=5 * SS)
+    p = p.resize((s, s), Image.LANCZOS)
+    a = p.split()[3]
+    f = Image.new("L", (1, s)); f.putdata([int(255 * (1 - .28 * i / s)) for i in range(s)])
+    p.putalpha(Image.composite(a, Image.new("L", (s, s), 0), f.resize((s, s))))
+    return p
+
+
+def make_icon(plate_img, name, drawer=None, stock=None):
+    """A self-contained entry: frosted plate, logo, and the name underneath."""
+    t = Image.new("RGBA", (BIG, BIG), (0, 0, 0, 0))
+    t.alpha_composite(plate_img, (PLATE_X, PLATE_Y))
+    inner = (aa(LOGO, drawer) if drawer else
+             Image.open(stock).convert("RGBA").resize((LOGO, LOGO), Image.LANCZOS))
+    t.alpha_composite(inner, ((BIG - LOGO) // 2, PLATE_Y + (PLATE - LOGO) // 2))
+    if name:
+        d = ImageDraw.Draw(t)
+        f = ImageFont.truetype(FONT_BOLD, NAME_SIZE)
+        bb = d.textbbox((0, 0), name, font=f)
+        while bb[2] - bb[0] > BIG - 20 and f.size > 28:      # long names shrink to fit
+            f = ImageFont.truetype(FONT_BOLD, f.size - 4)
+            bb = d.textbbox((0, 0), name, font=f)
+        d.text((BIG // 2 - (bb[2] - bb[0]) // 2, NAME_Y), name, font=f, fill=(255, 255, 255))
+    return t
+
+# ------------------------------------------------------------------ picture
 def fit(path):
     """Centre-crop to 16:9 and scale to exactly 3840x2160."""
     im = Image.open(path).convert("RGB"); w, h = im.size
@@ -132,36 +175,42 @@ def luminance(im):
 def build(background, darken, out, preview_path=None, quiet=False):
     say = (lambda *a: None) if quiet else print
     os.makedirs(os.path.join(out, "icons"), exist_ok=True)
-
-    say(f"  geometry   TILE={TILE} MaxVisible={MAXVIS} (needs >= 2)")
+    say(f"  geometry   TILE={TILE}  up to {MAXVIS} entries without scrolling")
     assert MAXVIS >= 2, "big_icon_size too large: rEFInd would scroll the OS row"
 
     # font: BLACK glyphs. libeg/text.c inverts the font on dark backgrounds
     # (255-x), so black here renders as light grey on screen.
-    GREY_ON_SCREEN = 160
-    fill = 255 - GREY_ON_SCREEN
+    GREY = 160; fill = 255 - GREY
     f = ImageFont.truetype(FONT_MONO, 44); asc, desc = f.getmetrics()
     cw, ch = math.ceil(f.getlength("M")), asc + desc
     fi = Image.new("RGBA", (cw * 96, ch), (0, 0, 0, 0)); d = ImageDraw.Draw(fi)
     for i in range(95):
         d.text((i * cw, 0), chr(32 + i), font=f, fill=(fill,) * 3 + (255,))
-    d.rectangle([95 * cw + 2, 2, 96 * cw - 3, ch - 3], outline=(fill,) * 3 + (255,), width=2)
+    d.rectangle([95*cw+2, 2, 96*cw-3, ch-3], outline=(fill,) * 3 + (255,), width=2)
     fi.save(f"{out}/font.png")
-    say(f"  font       cell {cw}x{ch}, glyphs at {fill} -> {GREY_ON_SCREEN} on screen")
+    say(f"  font       cell {cw}x{ch}, glyphs at {fill} -> {GREY} on screen")
 
-    box = BIG * 2                       # drawn at 2x, rEFInd shrinks to BIG
-    for fn, name in ((logo_windows, "icon_windows.png"), (logo_ubuntu, "icon_ubuntu.png")):
-        t = Image.new("RGBA", (box, box), (0, 0, 0, 0))
-        t.alpha_composite(aa(LOGO_VIS * 2, fn), ((box - LOGO_VIS * 2) // 2,) * 2)
-        t.save(f"{out}/{name}")
+    pl = plate(PLATE)
+    make_icon(pl, "Windows", drawer=logo_windows).save(f"{out}/icons/os_win8.png")
+    make_icon(pl, "Windows", drawer=logo_windows).save(f"{out}/icons/os_win.png")
+    make_icon(pl, "Ubuntu",  drawer=logo_ubuntu).save(f"{out}/icons/os_ubuntu.png")
+    hand = {"os_win8", "os_win", "os_ubuntu"}
+    n = len(hand)
+    for src in sorted(glob.glob(os.path.join(HERE, "stock-icons", "os_*.png"))):
+        stem = os.path.splitext(os.path.basename(src))[0]
+        if stem in hand:
+            continue
+        make_icon(pl, NAMES.get(stem[3:], ""), stock=src).save(f"{out}/icons/{stem}.png")
+        n += 1
     for fn, name in TOOLS:
         aa(192, fn).save(f"{out}/icons/{name}")
+    say(f"  icons      {n} operating systems themed, each carrying its own name")
 
     bg = fit(background)
     lum_raw = luminance(bg)
     if str(darken).lower() == "auto":
-        d = 0 if lum_raw <= TARGET_LUM else round((1 - TARGET_LUM / lum_raw) * 100)
-        darken = 0 if d < 5 else min(100, d)   # a few percent is not worth applying
+        d_ = 0 if lum_raw <= TARGET_LUM else round((1 - TARGET_LUM / lum_raw) * 100)
+        darken = 0 if d_ < 5 else min(100, d_)
         say(f"  darken     auto -> {darken}%  (targeting luminance {TARGET_LUM:.0f})")
     darken = int(darken)
     if darken:
@@ -169,48 +218,61 @@ def build(background, darken, out, preview_path=None, quiet=False):
     lum = luminance(bg)
     say(f"  darken     {darken}%   luminance behind the tiles {lum_raw:.0f} -> {lum:.0f}")
     if lum > 60:
-        say(f"  NOTE       that is bright; the frosted tiles and the white labels")
-        say(f"             will have little contrast. Try --darken {min(100, round((1-30/lum_raw)*100))}.")
-
-    for c in CEN:
-        frost(bg, c, H // 2, PLATE)
-    d = ImageDraw.Draw(bg)
-    FB = ImageFont.truetype(FONT_BOLD, F_OS)
-    bbs = [d.textbbox((0, 0), t, font=FB) for t in ("Windows", "Ubuntu")]
-    ink_t = LBL_Y + min(b[1] for b in bbs); ink_b = LBL_Y + max(b[3] for b in bbs)
-    above, below = ink_t - (H // 2 + PLATE // 2), R1Y - ink_b
-    say(f"  spacing    plate->label {above}px   label->tools {below}px")
-    assert below > 0, "the tool row would cover the labels"
-    assert abs(above - below) <= 2, f"asymmetric spacing: {above} vs {below}"
-    for cx, t in zip(CEN, ("Windows", "Ubuntu")):
-        bb = d.textbbox((0, 0), t, font=FB)
-        d.text((cx - (bb[2] - bb[0]) // 2, LBL_Y), t, font=FB, fill=(255, 255, 255))
+        say(f"  NOTE       bright; the plates and the names will have little contrast."
+            f" Try --darken {min(100, round((1 - TARGET_LUM / lum_raw) * 100))}.")
     bg.save(f"{out}/background.png", "PNG", optimize=True)
 
-    ins = (TILE - PLATE) // 2
+    # the highlight has to frame the plate, which sits high inside the icon
+    px, py = ICON_OFF + PLATE_X, ICON_OFF + PLATE_Y
     sel = Image.new("RGBA", (TILE * SS, TILE * SS), (0, 0, 0, 0)); sd = ImageDraw.Draw(sel)
-    a, b = ins * SS, (TILE - ins) * SS
-    sd.rounded_rectangle([a, a, b, b], radius=int(PLATE*SS*.19), fill=(255, 255, 255, 34))
-    sd.rounded_rectangle([a, a, b, b], radius=int(PLATE*SS*.19), outline=(255, 255, 255, 215), width=5*SS)
+    box = [px*SS, py*SS, (px+PLATE)*SS, (py+PLATE)*SS]
+    sd.rounded_rectangle(box, radius=int(PLATE*SS*.19), fill=(255, 255, 255, 34))
+    sd.rounded_rectangle(box, radius=int(PLATE*SS*.19), outline=(255, 255, 255, 215), width=5*SS)
     sel.resize((TILE, TILE), Image.LANCZOS).save(f"{out}/selection_big.png")
-    ss = Image.new("RGBA", (TILE1 * SS, TILE1 * SS), (0, 0, 0, 0)); s2 = ImageDraw.Draw(ss)
-    s2.rounded_rectangle([2, 2, TILE1*SS-3, TILE1*SS-3], radius=int(TILE1*SS*.24), fill=(255, 255, 255, 40))
-    s2.rounded_rectangle([2, 2, TILE1*SS-3, TILE1*SS-3], radius=int(TILE1*SS*.24), outline=(255, 255, 255, 190), width=3*SS)
+    ss = Image.new("RGBA", (TILE1*SS, TILE1*SS), (0, 0, 0, 0)); s2 = ImageDraw.Draw(ss)
+    s2.rounded_rectangle([2, 2, TILE1*SS-3, TILE1*SS-3], radius=int(TILE1*SS*.24), fill=(255,255,255,40))
+    s2.rounded_rectangle([2, 2, TILE1*SS-3, TILE1*SS-3], radius=int(TILE1*SS*.24), outline=(255,255,255,190), width=3*SS)
     ss.resize((TILE1, TILE1), Image.LANCZOS).save(f"{out}/selection_small.png")
 
     if preview_path:
-        c = bg.convert("RGBA")
-        c.alpha_composite(Image.open(f"{out}/selection_big.png").convert("RGBA"), (POS[0], R0Y))
-        for x, n in zip(POS, ("icon_windows.png", "icon_ubuntu.png")):
-            c.alpha_composite(Image.open(f"{out}/{n}").convert("RGBA").resize((BIG, BIG), Image.LANCZOS),
-                              (x + OFF, R0Y + OFF))
-        o1 = (TILE1 - SMALL) // 2
-        for i, (_, n) in enumerate(TOOLS):
-            c.alpha_composite(Image.open(f"{out}/icons/{n}").convert("RGBA").resize((SMALL, SMALL), Image.LANCZOS),
-                              (R1X + i * (TILE1 + XSP) + o1, R1Y + o1))
-        c.convert("RGB").save(preview_path)
+        preview(out, preview_path, ["os_win8", "os_ubuntu"], "Boot Windows from DESKTOP")
         say(f"  preview    {preview_path}")
     return lum
+
+
+def preview(assets, dst, icons, label, scale=None):
+    """Render the menu exactly as rEFInd lays it out, for any number of entries."""
+    n = len(icons)
+    r0x = (W + XSP - (TILE + XSP) * n) // 2
+    r1y = R0Y + TILE + YSP
+    r1x = (W + XSP - (TILE1 + XSP) * 5) // 2
+    txty = r1y + TILE1 + YSP
+    c = Image.open(f"{assets}/background.png").convert("RGBA")
+    c.alpha_composite(Image.open(f"{assets}/selection_big.png").convert("RGBA"), (r0x, R0Y))
+    for i, name in enumerate(icons):
+        ic = Image.open(f"{assets}/icons/{name}.png").convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
+        c.alpha_composite(ic, (r0x + i * (TILE + XSP) + ICON_OFF, R0Y + ICON_OFF))
+    o1 = (TILE1 - SMALL) // 2
+    for i, (_, fn) in enumerate(TOOLS):
+        t = Image.open(f"{assets}/icons/{fn}").convert("RGBA").resize((SMALL, SMALL), Image.LANCZOS)
+        c.alpha_composite(t, (r1x + i * (TILE1 + XSP) + o1, r1y + o1))
+    if label:
+        f = ImageFont.truetype(FONT_MONO, 44); a_, d_ = f.getmetrics()
+        cw, ch = math.ceil(f.getlength("M")), a_ + d_
+        cell = Image.new("RGBA", (cw * 96, ch), (255, 255, 255, 0)); dd = ImageDraw.Draw(cell)
+        for i in range(95):
+            dd.text((i * cw, 0), chr(32 + i), font=f, fill=(160,) * 3 + (255,))
+        x = (W - cw * len(label)) // 2
+        for ch_ in label:
+            i = ord(ch_) - 32
+            if 0 <= i < 95:
+                c.alpha_composite(cell.crop((i*cw, 0, (i+1)*cw, ch)), (x, txty))
+            x += cw
+    img = c.convert("RGB")
+    if scale:
+        img = img.resize(scale, Image.LANCZOS)
+    img.save(dst)
+
 
 if __name__ == "__main__":
     cfg = {}
