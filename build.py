@@ -33,8 +33,12 @@ MAXVIS = W // (TILE + XSP) - 1    # entries rEFInd will show without scrolling
 
 # inside the BIG icon canvas
 FROST     = 14                    # frost_radius in refind.conf; the preview matches it
-GLASS_A   = 36                    # how much of the panel's own tint there is
-VEIL_A    = 18                    # the raking light across the top of it
+GLASS_A   = 24                    # how much of the panel's own tint there is
+VEIL_A    = 10                    # the raking light across the top of it
+RIM_A     = 205                   # the lit edge of the pane
+HAIR_A    = 210                   # a bright hairline just inside the top edge
+SWEEP_A   = 34                    # a reflection lying diagonally across the pane
+SWEEP_AT, SWEEP_W = 0.34, 0.22    # where it falls, and how broad it is
 # These three decide whether the panel reads as glass or as a painted tile. Too
 # much blur and too much tint compound: a wide blur averages the whole panel to
 # one colour and the tint then covers what little is left, so the photograph
@@ -47,6 +51,7 @@ PLATE_Y   = 64                    # pushed up to leave room for the name
 LOGO      = 218
 NAME_SIZE = 56
 DOT_PX    = 20                    # one dot of the spinner, at 3840x2160
+SHADOW_BLUR, SHADOW_DROP, SHADOW_A = 26, 14, 130   # only visible on a light photograph
 NAME_Y    = PLATE_Y + PLATE + 22
 ICON_OFF  = (TILE - BIG) // 2     # icon is centred in the tile
 PLATE_X   = (BIG - PLATE) // 2
@@ -244,12 +249,40 @@ def duotone(img, table, strength):
 
 
 # -------------------------------------------------------------------- glass
-def plate(s, fill=None, light=(255, 255, 255)):
-    """A frosted panel that does not know what is behind it.
+def plate_shadow(blur=SHADOW_BLUR, drop=SHADOW_DROP, alpha=SHADOW_A):
+    """What lifts the panel off the photograph.
 
-    It cannot blur what is behind it, since it does not know where it will be
-    drawn. That is why the photograph itself is softened instead — see detail()
-    — leaving this a plain translucent panel with no compensation of any kind."""
+    A blurred rounded rectangle is doing more work here than the blur behind the
+    glass is. On a smooth photograph there is nothing behind the panel to soften,
+    so the frost has nothing to show and the panel reads as a flat translucent
+    rectangle no matter how strong it is. A shadow does not care what is behind
+    it: it says the panel is a separate thing, above the picture, which is the
+    cue the eye is actually reading.
+
+    It is punched out under the panel itself -- you do not see a thing's own
+    shadow through the front of it -- and it lives inside the icon, so it travels
+    with the entry the way everything else does."""
+    r = int(PLATE * .19)
+    sh = Image.new("RGBA", (BIG, BIG), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).rounded_rectangle(
+        [PLATE_X, PLATE_Y + drop, PLATE_X + PLATE - 1, PLATE_Y + PLATE + drop - 1],
+        radius=r, fill=(0, 0, 0, alpha))
+    sh = sh.filter(ImageFilter.GaussianBlur(blur))
+    hole = Image.new("L", (BIG, BIG), 255)
+    ImageDraw.Draw(hole).rounded_rectangle(
+        [PLATE_X, PLATE_Y, PLATE_X + PLATE - 1, PLATE_Y + PLATE - 1], radius=r, fill=0)
+    sh.putalpha(ImageChops.multiply(sh.split()[3], hole))
+    return sh
+
+
+def plate(s, fill=None, light=(255, 255, 255)):
+    """A pane of frosted glass.
+
+    The blur behind it is drawn by rEFInd at draw time -- see the patch -- so
+    what is built here is only the pane itself: its tint, the light raking across
+    it, and the rim. The rim is not uniform: glass catches light along one edge
+    and goes nearly dark along the opposite one, and a rim of the same brightness
+    all the way round is the difference between a pane and a rounded rectangle."""
     p = Image.new("RGBA", (s * SS, s * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(p); r = int(s * SS * .19)
     d.rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r,
@@ -261,8 +294,38 @@ def plate(s, fill=None, light=(255, 255, 255)):
     m = Image.new("L", (s*SS, s*SS), 0)
     ImageDraw.Draw(m).rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=255)
     p.alpha_composite(Image.composite(veil, Image.new("RGBA", (s*SS, s*SS), (0,0,0,0)), m))
-    ImageDraw.Draw(p).rounded_rectangle([3, 3, s*SS-4, s*SS-4], radius=r,
-                                        outline=tuple(light) + (150,), width=5 * SS)
+
+    # A reflection lying across the pane. This is the one that does the work: a
+    # dark photograph gives the frost nothing to blur and a shadow nothing to
+    # darken, so neither of them says "glass". A reflection does not depend on
+    # what is behind at all -- it is light on the surface, and it is what the eye
+    # reads a glossy pane by. Its value depends only on x + y, so it is built
+    # from a single line rather than pixel by pixel.
+    n = s * SS
+    line = Image.new("L", (2 * n, 1))
+    line.putdata([int(SWEEP_A * max(0.0, 1 - abs(t / (2 * n) - SWEEP_AT) / SWEEP_W) ** 2)
+                  for t in range(2 * n)])
+    diag = Image.new("L", (n, n))
+    for y in range(n):
+        diag.paste(line.crop((y, 0, y + n, 1)), (0, y))
+    sweep = Image.new("RGBA", (n, n), tuple(light) + (255,))
+    sweep.putalpha(diag)
+    p.alpha_composite(Image.composite(sweep, Image.new("RGBA", (n, n), (0, 0, 0, 0)), m))
+
+    # a hairline of light just inside the top edge, the way a bevel catches it
+    hair = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    ImageDraw.Draw(hair).rounded_rectangle([5*SS, 5*SS, n-1-5*SS, n-1-5*SS], radius=r,
+                                           outline=(255, 255, 255, 255), width=2 * SS)
+    ramp = Image.new("L", (1, n))
+    ramp.putdata([int(HAIR_A * max(0.0, 1 - i / (n * 0.45))) for i in range(n)])
+    hair.putalpha(ImageChops.multiply(hair.split()[3], ramp.resize((n, n))))
+    p.alpha_composite(hair)
+
+    rim = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    ImageDraw.Draw(rim).rounded_rectangle([3, 3, n-4, n-4], radius=r,
+                                          outline=tuple(light) + (RIM_A,), width=5 * SS)
+    p.alpha_composite(rim)
+
     p = p.resize((s, s), Image.LANCZOS)
     a = p.split()[3]
     f = Image.new("L", (1, s)); f.putdata([int(255 * (1 - .28 * i / s)) for i in range(s)])
@@ -304,6 +367,7 @@ def apply_frost(canvas, mask, x, y, radius):
 def make_icon(plate_img, name, drawer=None, stock=None, tone=None, label=(255, 255, 255)):
     """A self-contained entry: frosted plate, logo, and the name underneath."""
     t = Image.new("RGBA", (BIG, BIG), (0, 0, 0, 0))
+    t.alpha_composite(plate_shadow())
     t.alpha_composite(plate_img, (PLATE_X, PLATE_Y))
     inner = (aa(LOGO, drawer) if drawer else
              Image.open(stock).convert("RGBA").resize((LOGO, LOGO), Image.LANCZOS))
