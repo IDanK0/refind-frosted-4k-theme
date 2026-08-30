@@ -134,15 +134,20 @@ def accent(im):
 
     A plain average is useless here: opposite hues cancel and everything comes
     out grey. So the hues are averaged as points on a circle, weighted by how
-    colourful and how bright each pixel is, which lets a small bright sky decide
-    the answer over a large dark dune -- which is what the eye does too."""
+    colourful and how bright each pixel is.
+
+    Brightness has to count for a great deal -- v cubed, not v. With v alone, a
+    vast dark dune drags the circular mean away from the small bright sky that
+    the eye actually reads the picture by: on the default photograph that landed
+    on 341 degrees, a pink, when the sky is at 13 and the picture is plainly
+    warm. Cubed, it comes out at 17."""
     small = im.convert("RGB").resize((240, 135), Image.LANCZOS)
     raw = small.tobytes()
     x = y = weight = sat = 0.0
     for i in range(0, len(raw), 3):
         r, g, b = raw[i], raw[i + 1], raw[i + 2]
         h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        w = (s ** 1.5) * v
+        w = (s ** 1.5) * (v ** 3)
         if w <= 0:
             continue
         a = h * 2 * math.pi
@@ -161,19 +166,17 @@ def accent(im):
 # photograph with a theme indistinguishable from grey, which is not what asking
 # for the picture's colour means. The ceiling stops a vivid one shouting.
 TONE = {
-    "plate": (0.45, 0.10, 0.24, 0.90),   # the panel's own tint
-    "dark":  (0.90, 0.30, 0.60, 0.20),   # unused since the ramp took over
-    "light": (0.60, 0.14, 0.32, 0.86),   # the border, the names, the tool glyphs
-    "glyph": (0.60, 0.14, 0.32, 0.86),
-    "text":  (0.60, 0.14, 0.32, 0.62),   # the line rEFInd writes at the bottom
+    "plate": (0.18, 0.05, 0.12, 0.92),   # the panel's own tint
+    "dark":  (0.30, 0.08, 0.20, 0.20),   # unused since the ramp took over
+    "light": (0.22, 0.06, 0.14, 0.88),   # the border, the names, the tool glyphs
+    "glyph": (0.22, 0.06, 0.14, 0.88),
+    "text":  (0.22, 0.06, 0.14, 0.63),   # the line rEFInd writes at the bottom
 }
-# Two things make a palette look faded, and both were happening. Everything was
-# drawn at a lightness of 0.9 with a saturation near 0.15, which is the
-# definition of a pastel; and a logo laid on a straight ramp from a dark colour
-# to a light one loses its chroma exactly in the middle, which is where a logo
-# sits. Lowering the lightness and letting the chroma peak (see LOGO_RAMP) puts
-# the colour back without turning the theme pink: chosen by rendering the menu
-# at three densities and looking.
+# These are deliberately near-neutral. The point is a warm grey that belongs to
+# the photograph, not a coloured theme: at the default photograph's 43%
+# saturation they come out around 0.09, which is a tint you read as warmth
+# rather than as a colour. What makes it look like more than that is the ramp
+# below, which stops a logo turning grey in its own middle.
 # The ramp a logo is laid along: (chroma at the peak, how broad the peak is,
 # lightness at the dark end, at the light end). The chroma has to peak in the
 # middle rather than run straight from a dark colour to a light one, because a
@@ -181,7 +184,7 @@ TONE = {
 # nearly grey -- and a logo sits in the middle of its own range, exactly where
 # that happens. The Windows blue lands at 0.60 of the way up; a straight ramp
 # gives it a saturation of 0.17, this gives it 0.43.
-LOGO_RAMP  = (0.52, 1.4, 0.18, 0.86)
+LOGO_RAMP  = (0.28, 1.4, 0.18, 0.86)
 GREY_PHOTO = 0.04       # below this the picture has no colour to lend
 
 
@@ -207,7 +210,7 @@ def shades(im, strength=1.0):
         c = colorsys.hsv_to_rgb(h, max(lo, min(s * sf, hi)), v)
         out[part] = mix(NEUTRAL[part], tuple(int(x * 255) for x in c))
     peak, bulge, v_dark, v_light = LOGO_RAMP
-    out["ramp"] = ramp(h, max(0.18, min(s * 1.4, peak)), bulge, v_dark, v_light)
+    out["ramp"] = ramp(h, max(0.08, min(s * 0.28, peak)), bulge, v_dark, v_light)
     return out
 
 
