@@ -61,12 +61,32 @@ fi
 
 [ "$(id -u)" -eq 0 ] || { echo "Installing needs root: sudo $0 --install"; exit 1; }
 [ -d "$ESP" ] || { echo "rEFInd not found at $ESP"; exit 1; }
-if [ ! -f "$ESP/refind_x64.efi.stock" ]; then
-    cp "$ESP/refind_x64.efi" "$ESP/refind_x64.efi.stock"
-    echo "Kept the distribution binary as refind_x64.efi.stock"
+
+# Keep a copy of the unpatched binary to fall back to -- but only if the one
+# currently installed really is unpatched. rEFInd's config tokens live in the
+# binary as EFI (UTF-16LE) strings, so a patched build is recognisable by
+# carrying "frost_radius"; saving that as the fallback would defeat the point.
+FROST=$(printf 'frost_radius' | sed 's/./&\\x00/g')
+BACKUP=""
+for c in "$ESP"/refind_x64.efi.stock "$ESP"/refind_x64.efi.pacchetto; do
+    [ -f "$c" ] && { BACKUP="$c"; break; }
+done
+if [ -z "$BACKUP" ]; then
+    if grep -qaP "$FROST" "$ESP/refind_x64.efi"; then
+        echo "Note: the installed binary is already patched, and there is no"
+        echo "      unpatched copy to fall back to. Get one with:"
+        echo "         apt-get download refind && dpkg-deb -x refind_*.deb /tmp/r"
+        echo "      then keep /tmp/r/usr/share/refind/refind_x64.efi somewhere safe."
+    else
+        cp "$ESP/refind_x64.efi" "$ESP/refind_x64.efi.stock"
+        BACKUP="$ESP/refind_x64.efi.stock"
+        echo "Kept the distribution binary as refind_x64.efi.stock"
+    fi
+else
+    echo "Fallback binary already present: $(basename "$BACKUP")"
 fi
 install -m 0755 refind/refind_x64.efi "$ESP/refind_x64.efi"
 echo "Installed."
 echo
 echo "Add 'frost_radius 32' to refind.conf to switch the effect on."
-echo "To go back:  sudo cp $ESP/refind_x64.efi.stock $ESP/refind_x64.efi"
+[ -n "$BACKUP" ] && echo "To go back:  sudo cp $BACKUP $ESP/refind_x64.efi"
