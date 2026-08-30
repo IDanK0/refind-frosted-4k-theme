@@ -73,11 +73,21 @@ Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos, W, H);
 ```
 
 so the blur belongs there. `patches/frosted-glass.patch` adds `egFrostImage()`,
-which blurs that crop in proportion to the icon's own alpha — sharp where the
-icon is empty, frosted where the plate is — and a `frost_radius` token to
-control it. `./build-refind.sh --install` builds and installs it. Without the
-patched binary the theme still works; the plates are simply translucent rather
-than frosted.
+which blurs that crop wherever a stencil says there is glass, and the tokens
+`frost_radius` and `frost_mask_big` to control it. `./build-refind.sh --install`
+builds and installs it. Without the patched binary the theme still works; the
+plates are simply translucent rather than frosted.
+
+The stencil matters more than it sounds. Blending the blur in proportion to the
+*panel's* alpha is the obvious thing to do and it is wrong: the panel is 25%
+opaque, so the background comes out a quarter blurred and three quarters sharp,
+which reads as a slightly soft photograph and not as glass at all. Real frosted
+glass scatters everything that passes through it — behind the pane the view is
+*fully* blurred, and the pane's tint is laid over that afterwards. So the
+stencil's alpha says **where** the glass is, never how transparent it is, and
+the tint arrives with the icon that is composited next. Measured on a
+detailed photograph, `detail` inside the panel falls from 8.53 to 1.86 while
+one pixel outside it stays at 7.97, unchanged.
 
 **The plate is inside the icon, not in the background.** rEFInd re-centres the
 row whenever the count changes — with two entries it starts at x=1299, with
@@ -97,10 +107,12 @@ firmware reports.
 
 ### What it cannot do
 
-**The boot menu is English only.** rEFInd's own strings are compiled into the
-binary — `L"Shut Down Computer"`, `PoolPrint(L"Boot %s from %s")` — with no
-locale files and no gettext. Only rebuilding rEFInd would change them. The
-graphical picker is translated; the boot menu is not, and cannot be.
+**The boot menu is English only, so far.** rEFInd's own strings are compiled
+into the binary — `L"Shut Down Computer"`, `L"Reboot Computer"` — with no locale
+files and no gettext, so no configuration reaches them. Since the build is
+already patched and rebuilt here, translating them is more of the same patch
+rather than a different kind of problem; it simply is not done yet. The
+graphical picker is translated.
 
 **Discovered systems are slightly softer than the hand-drawn ones.** rEFInd's
 stock icons are 128px and get scaled up to 218. Windows and Ubuntu are drawn as
@@ -111,13 +123,11 @@ fixes any of them.
 
 ## Design notes
 
-**The frosted glass is baked, not live.** A real frosted panel samples and blurs
-what is behind it every frame; a UEFI application has no compositor, no shader
-and no frame loop, so that is impossible. But the background is a fixed image and
-the tiles sit at fixed coordinates, so the blur is computed *once* in `build.py`
-— a real Gaussian blur of the dune, brightened, with a cool veil, a raking-light
-gradient and a soft drop shadow — and composited into `background.png`. At
-runtime it costs nothing: it is just a PNG.
+**The screenshots are rendered by the layout code itself.** `make-screenshots.py`
+calls the same `preview()` that `build.py` uses, which walks rEFInd's own
+arithmetic for the row positions and runs the same blur the patched binary runs
+at draw time. A screenshot in this README therefore cannot drift away from what
+the machine draws.
 
 **Names are baked into the icons.** rEFInd's own label mechanism prints one line
 at the bottom of the screen in the fixed form *"Boot X from Y"* (see *Gotchas*),
@@ -266,18 +276,22 @@ applying. Change the default in `library/library.json` (`darken_predefinito`).
 All constants live at the top of `build.py`:
 
 ```python
-BIG, SMALL, NTOOLS = 549, 48, 5
-PLATE, LOGO_VIS, F_OS, LBL_Y = 340, 218, 66, 1290
-TARGET_LUM = 30.0        # what --darken auto aims for
+BIG, SMALL = 549, 48       # big_icon_size / small_icon_size in refind.conf
+FROST      = 32            # frost_radius; the preview renders the same blur
+PLATE      = 340           # the glass panel inside an icon
+LOGO       = 218           # the OS logo on the panel
+TARGET_LUM = 30.0          # what --darken auto aims for
 ```
 
 Change one, run `./build.py`, and every asset plus the preview render is
 rebuilt. If the spacing no longer works out, the script stops with an assertion
 rather than producing something subtly wrong.
 
-**If you change `big_icon_size` or `small_icon_size` you must regenerate**, because
-the glass tiles and the labels are baked into `background.png` at fixed
-coordinates that depend on both.
+**`BIG` and `SMALL` must match `big_icon_size` and `small_icon_size` in
+`refind.conf`,** and `FROST` must match `frost_radius`: the first pair decides
+what gets upscaled, and the second is what makes the preview honest. `PLATE`
+drives both the icons and `frost_big.png`, so the stencil cannot fall out of
+register with the panel it is a stencil of.
 
 ---
 
@@ -297,38 +311,66 @@ rEFInd expects **black** glyphs and inverts them itself. Supply white glyphs and
 you get black, unreadable text. `build.py` draws them at 95 so they render at 160
 — a soft grey.
 
-**2. Menu entry titles are hardcoded.** `config.c:964`:
+**2. A discovered entry is labelled with its own path.** `scan.c`, in
+`AddLoaderEntry()`:
 
 ```c
-Entry->me.Title = PoolPrint(L"Boot %s from %s", Title, CurrentVolume->VolName);
+Entry->Title = StrDuplicate((LoaderTitle != NULL) ? LoaderTitle : LoaderPath);
 ```
 
-A manual stanza titled `Windows` displays as *"Boot Windows from &lt;volume&gt;"*.
-No configuration option changes this. The volume name is the **GPT partition
-name** of the ESP, so the only lever is renaming that partition:
-`sgdisk -c 1:"NAME" /dev/nvme0n1` (cosmetic and safe — partitions are identified
-by GUID, never by name; back the table up with `sgdisk --backup` first).
+An automatically discovered loader arrives with no title, so it is named after
+the file it is: *"Boot EFI\ubuntu\grubx64.efi from &lt;volume&gt;"*. rEFInd
+already knows better than that — `SetLoaderDefaults()` takes
+`FindLastDirName(LoaderPath)` as its first icon hint, which is exactly why that
+entry gets the Ubuntu logo. The patch reads the same hint for the label, so the
+menu names systems rather than files, and drops the *"from &lt;volume&gt;"*
+suffix when the loader is on the ESP rEFInd itself booted from — where it is on
+every entry and tells none of them apart. A USB stick keeps its suffix, which is
+the one case where it says something.
+
+Renaming the ESP's GPT partition is *not* the fix, however tempting: it writes
+one machine's name into the partition table and every other machine that ever
+sees the disk reads it.
 
 **3. `hideui label` also hides the countdown.** Both live behind the same guard,
 so hiding the long titles also removes *"Booting in N seconds"*. Raise `timeout`
 to compensate.
 
-**4. `showtools` does not do what it says on this build.** The branch runs — it
-sets `HiddenTags = FALSE`, observably removing the *Manage Hidden Tags* entry —
-but the `SetMem()` that should zero the tool table has no effect, so the default
-tools appear regardless of the argument. Unresolved. Work with the five default
-tools rather than against them.
+**4. The fallback boot loader comes back as a third entry.** `EFI\BOOT\bootx64.efi`
+is usually a byte-for-byte copy of `shimx64.efi`, and `shimx64.efi` is in
+rEFInd's default `dont_scan_files`. `ScanLoaderDir()` skips it — and skips it
+*before* reaching its own `DuplicatesFallback()` test, which only ever sees files
+that were accepted:
 
-**5. Icons are upscaled without warning.** `big_icon_size 256` against a 128 px
+```c
+FilenameIn(Volume, Path, DirEntry->FileName, GlobalConfig.DontScanFiles) ||
+!IsValidLoader(Volume->RootDir, FullName)) {
+      continue;   // skip this
+}
+```
+
+So rEFInd refuses to list a program and then offers a byte-identical copy of it
+as *"Fallback boot loader"*. The patch runs the duplicate test where the refusal
+happens. A USB stick, whose `EFI/BOOT/bootx64.efi` has no twin beside it, is
+unaffected — which is the point, since that is how a bootable stick boots.
+
+**5. MokManager is offered with Secure Boot switched off.** rEFInd shows the MOK
+utility whenever it finds `mmx64.efi` on the ESP, and Ubuntu's shim always
+installs one. But MokManager enrols keys into the database Shim consults, and
+Shim consults it only under Secure Boot — so with Secure Boot off the key icon
+in the tool row leads nowhere. The patch makes the tool conditional on
+`secure_mode()`, so it appears exactly when it can do something.
+
+**6. Icons are upscaled without warning.** `big_icon_size 256` against a 128 px
 icon file silently doubles it and it looks soft. Always ship art at or above the
 configured size.
 
-**6. On Ubuntu, `recordfail` overrides `GRUB_TIMEOUT`.** If GRUB is chainloaded as
+**7. On Ubuntu, `recordfail` overrides `GRUB_TIMEOUT`.** If GRUB is chainloaded as
 a silent pass-through, an interrupted boot leaves `recordfail=1` in `grubenv`
 and `/etc/grub.d/00_header` then forces a 30-second visible menu. Set
 `GRUB_RECORDFAIL_TIMEOUT=0`.
 
-**7. Config paths have two different bases.** `banner`, `font` and `selection_*`
+**8. Config paths have two different bases.** `banner`, `font` and `selection_*`
 are relative to the directory holding `refind_x64.efi`; `icon` inside a
 `menuentry` is absolute from the ESP root. Mixing them up fails **silently** —
 the file is simply never loaded.

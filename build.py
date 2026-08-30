@@ -32,6 +32,7 @@ R0Y    = (H // 2) - TILE // 2     # the OS row is always vertically centred
 MAXVIS = W // (TILE + XSP) - 1    # entries rEFInd will show without scrolling
 
 # inside the BIG icon canvas
+FROST     = 32                    # frost_radius in refind.conf; the preview matches it
 PLATE     = 340                   # frosted tile
 PLATE_Y   = 64                    # pushed up to leave room for the name
 LOGO      = 218
@@ -141,6 +142,37 @@ def plate(s):
     f = Image.new("L", (1, s)); f.putdata([int(255 * (1 - .28 * i / s)) for i in range(s)])
     p.putalpha(Image.composite(a, Image.new("L", (s, s), 0), f.resize((s, s))))
     return p
+
+
+def frost_mask():
+    """The stencil that tells rEFInd where the glass is.
+
+    Not a picture of the panel: its alpha is the panel's *shape*, at full
+    strength. Blending a blur in proportion to a translucent panel's own alpha
+    would leave the background a quarter blurred, which reads as a slightly soft
+    photograph rather than as glass. Glass scatters everything that passes
+    through it, and only then tints it -- so the tint belongs to the compositing
+    of the icon that follows, and all that is asked of the stencil is the shape."""
+    m = Image.new("RGBA", (BIG * SS, BIG * SS), (0, 0, 0, 0))
+    ImageDraw.Draw(m).rounded_rectangle(
+        [PLATE_X * SS, PLATE_Y * SS, (PLATE_X + PLATE) * SS - 1, (PLATE_Y + PLATE) * SS - 1],
+        radius=int(PLATE * SS * .19), fill=(255, 255, 255, 255))
+    return m.resize((BIG, BIG), Image.LANCZOS)
+
+
+def apply_frost(canvas, mask, x, y, radius):
+    """Blur behind the glass, as the patched rEFInd does at draw time.
+
+    rEFInd runs two box passes per axis; two boxes of width 2r+1 have variance
+    2*((2r+1)**2 - 1)/12, so a Gaussian of this sigma is the same blur, and the
+    preview shows what the machine will actually draw."""
+    if radius <= 0:
+        return
+    sigma = math.sqrt(2 * ((2 * radius + 1) ** 2 - 1) / 12)
+    box = (x, y, x + mask.width, y + mask.height)
+    region = canvas.crop(box)
+    canvas.paste(Image.composite(region.filter(ImageFilter.GaussianBlur(sigma)),
+                                 region, mask.split()[3]), box)
 
 
 def make_icon(plate_img, name, drawer=None, stock=None):
@@ -260,9 +292,10 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto"):
     s2.rounded_rectangle([2, 2, TILE1*SS-3, TILE1*SS-3], radius=int(TILE1*SS*.24), fill=(255,255,255,40))
     s2.rounded_rectangle([2, 2, TILE1*SS-3, TILE1*SS-3], radius=int(TILE1*SS*.24), outline=(255,255,255,190), width=3*SS)
     ss.resize((TILE1, TILE1), Image.LANCZOS).save(f"{out}/selection_small.png")
+    frost_mask().save(f"{out}/frost_big.png")
 
     if preview_path:
-        preview(out, preview_path, ["os_win8", "os_ubuntu"], "Boot Windows from DESKTOP")
+        preview(out, preview_path, ["os_win8", "os_ubuntu"], "Boot Windows")
         say(f"  preview    {preview_path}")
     return lum
 
@@ -275,6 +308,11 @@ def preview(assets, dst, icons, label, scale=None):
     r1x = (W + XSP - (TILE1 + XSP) * 5) // 2
     txty = r1y + TILE1 + YSP
     c = Image.open(f"{assets}/background.png").convert("RGBA")
+    # rEFInd frosts the cropped background before it lays the highlight and the
+    # icon over it, so do it in that order here too.
+    mask = Image.open(f"{assets}/frost_big.png").convert("RGBA")
+    for i in range(n):
+        apply_frost(c, mask, r0x + i * (TILE + XSP) + ICON_OFF, R0Y + ICON_OFF, FROST)
     c.alpha_composite(Image.open(f"{assets}/selection_big.png").convert("RGBA"), (r0x, R0Y))
     for i, name in enumerate(icons):
         ic = Image.open(f"{assets}/icons/{name}.png").convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
