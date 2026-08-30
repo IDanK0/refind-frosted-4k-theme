@@ -1,66 +1,66 @@
 {
-  "predefinito": "mars-over-dunes",
-  "darken_predefinito": "auto",
-  "sfondi": [
+  "default": "mars-over-dunes",
+  "default_darken": "auto",
+  "backgrounds": [
     {
       "slug": "mars-over-dunes",
-      "nome": "Mars Over Dunes",
+      "name": "Mars Over Dunes",
       "file": "library/mars-over-dunes.jpg",
-      "licenza": "Public domain",
-      "autore": "Great Sand Dunes National Park and Preserve",
-      "origine": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Mars_Over_Dunes_%2849179272651%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminosita": 30.9,
-      "darken_consigliato": 0
+      "licence": "Public domain",
+      "author": "Great Sand Dunes National Park and Preserve",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Mars_Over_Dunes_%2849179272651%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "luminance": 30.9,
+      "suggested_darken": 0
     },
     {
       "slug": "clear-desert-night-sky",
-      "nome": "Clear Desert Night Sky",
+      "name": "Clear Desert Night Sky",
       "file": "library/clear-desert-night-sky.jpg",
-      "licenza": "CC0",
-      "autore": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
-      "origine": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Clear_Desert_Night_Sky_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminosita": 153.8,
-      "darken_consigliato": 80
+      "licence": "CC0",
+      "author": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Clear_Desert_Night_Sky_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "luminance": 153.8,
+      "suggested_darken": 80
     },
     {
       "slug": "desert-skies",
-      "nome": "Desert Skies",
+      "name": "Desert Skies",
       "file": "library/desert-skies.jpg",
-      "licenza": "CC0",
-      "autore": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
-      "origine": "https://upload.wikimedia.org/wikipedia/commons/9/98/Desert_Skies_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminosita": 107.4,
-      "darken_consigliato": 72
+      "licence": "CC0",
+      "author": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/9/98/Desert_Skies_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "luminance": 107.4,
+      "suggested_darken": 72
     },
     {
       "slug": "morning-light-on-dunes",
-      "nome": "Morning Light on Dunes",
+      "name": "Morning Light on Dunes",
       "file": "library/morning-light-on-dunes.jpg",
-      "licenza": "Public domain",
-      "autore": "Great Sand Dunes National Park and Preserve",
-      "origine": "https://upload.wikimedia.org/wikipedia/commons/d/d7/Morning_Light_on_Dunes_%2850365974052%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminosita": 66.8,
-      "darken_consigliato": 55
+      "licence": "Public domain",
+      "author": "Great Sand Dunes National Park and Preserve",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/d/d7/Morning_Light_on_Dunes_%2850365974052%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "luminance": 66.8,
+      "suggested_darken": 55
     },
     {
       "slug": "snowy-dunes-in-moonlight",
-      "nome": "Snowy Dunes in Moonlight",
+      "name": "Snowy Dunes in Moonlight",
       "file": "library/snowy-dunes-in-moonlight.jpg",
-      "licenza": "Public domain",
-      "autore": "Great Sand Dunes National Park and Preserve",
-      "origine": "https://upload.wikimedia.org/wikipedia/commons/1/15/Snowy_Dunes_in_Moonlight_%2831169526377%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminosita": 135.9,
-      "darken_consigliato": 78
+      "licence": "Public domain",
+      "author": "Great Sand Dunes National Park and Preserve",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/1/15/Snowy_Dunes_in_Moonlight_%2831169526377%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "luminance": 135.9,
+      "suggested_darken": 78
     },
     {
       "slug": "dunes-crestone-peaks-stars",
-      "nome": "Dunes, Crestone Peaks and Stars",
+      "name": "Dunes, Crestone Peaks and Stars",
       "file": "library/dunes-crestone-peaks-stars.jpg",
-      "licenza": "CC BY 2.0",
-      "autore": "Great Sand Dunes National Park and Preserve",
-      "origine": "https://upload.wikimedia.org/wikipedia/commons/2/25/Dunes%2C_Crestone_Peaks_and_Stars_on_a_Quarter_Moon_Night_%2816992313172%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminosita": 41.6,
-      "darken_consigliato": 28
+      "licence": "CC BY 2.0",
+      "author": "Great Sand Dunes National Park and Preserve",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/2/25/Dunes%2C_Crestone_Peaks_and_Stars_on_a_Quarter_Moon_Night_%2816992313172%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "luminance": 41.6,
+      "suggested_darken": 28
     }
   ]
 }

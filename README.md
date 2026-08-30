@@ -6,8 +6,8 @@ dune, crisp text at 3840×2160, and no input lag.
 
 ![Boot menu](screenshots/menu.png)
 
-> Italian quick-start: **[GUIDA.md](GUIDA.md)** — how to change the background,
-> use your own photo, and adjust the dimming.
+> **[USAGE.md](USAGE.md)** — how to change the background, use your own photo,
+> and adjust the dimming.
 
 > The images in this README are **renders**, not photographs: they are produced by
 > `build.py` from the exact same asset files and rEFInd's own layout arithmetic, so
@@ -137,10 +137,12 @@ the theme, a **+** button to bring in a photo of your own, a switch for automati
 dimming and a slider for manual, and *Preview* / *Apply*. Applying asks for the
 password once, through polkit.
 
-`./install-launcher.sh` puts it in the Ubuntu applications menu, so it is one
-click away and no terminal is ever needed.
+`./install-launcher.sh` puts it in the applications menu, so it is one click
+away and no terminal is ever needed.
 
-![Picker](screenshots/gui.png)
+The interface follows the system language through gettext. English and Italian
+are included; adding another means copying `po/it.po` and translating its 21
+strings, then `msgfmt -o locale/<lang>/LC_MESSAGES/refind-background.mo`.
 
 ### The command line way
 

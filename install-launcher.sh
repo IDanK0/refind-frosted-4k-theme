@@ -10,4 +10,4 @@ sed "s|^Exec=.*|Exec=$HERE/background-gui.py|" "$HERE/refind-background.desktop"
 install -m 0644 "$HERE/icon.png" "$ICONS/refind-background.png"
 update-desktop-database "$APPS" 2>/dev/null || true
 gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
-echo "Added to the applications menu — search for 'Sfondo del menu di avvio'."
+echo "Added to the applications menu — search for \"Boot Menu Background\"."

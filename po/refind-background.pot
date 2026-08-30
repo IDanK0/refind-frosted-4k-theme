@@ -1,0 +1,107 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the refind-background package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: refind-background 1.0\n"
+"Report-Msgid-Bugs-To: https://github.com/IDanK0/refind-mojave-desktop/"
+"issues\n"
+"POT-Creation-Date: 2026-08-30 17:13+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: background-gui.py:34
+msgid "yours"
+msgstr ""
+
+#: background-gui.py:67 background-gui.py:80
+msgid "Boot Menu Background"
+msgstr ""
+
+#: background-gui.py:81
+msgid "pick one, or add a photo of your own"
+msgstr ""
+
+#: background-gui.py:83
+msgid "Add a photo of your own"
+msgstr ""
+
+#: background-gui.py:103
+msgid "Automatic dimming"
+msgstr ""
+
+#: background-gui.py:104
+msgid "Dim the photo just enough for the glass and the labels to read"
+msgstr ""
+
+#: background-gui.py:111
+msgid "Dim by"
+msgstr ""
+
+#: background-gui.py:123
+msgid "Preview"
+msgstr ""
+
+#: background-gui.py:125
+msgid "Apply"
+msgstr ""
+
+#: background-gui.py:154
+#, python-brace-format
+msgid "auto {0}%"
+msgstr ""
+
+#: background-gui.py:155
+msgid "no dimming needed"
+msgstr ""
+
+#: background-gui.py:176
+msgid "Choose a photo"
+msgstr ""
+
+#: background-gui.py:177
+msgid "Images"
+msgstr ""
+
+#: background-gui.py:194
+#, python-brace-format
+msgid "Added: {0}"
+msgstr ""
+
+#: background-gui.py:205
+msgid "Rendering…  (about ten seconds)"
+msgstr ""
+
+#: background-gui.py:219
+#, python-brace-format
+msgid "Failed: {0}"
+msgstr ""
+
+#: background-gui.py:222
+msgid "Preview opened — nothing was installed"
+msgstr ""
+
+#: background-gui.py:223
+msgid "Installing…  (you will be asked for your password)"
+msgstr ""
+
+#: background-gui.py:237
+#, python-brace-format
+msgid "Install failed: {0}"
+msgstr ""
+
+#: background-gui.py:237
+msgid "cancelled"
+msgstr ""
+
+#: background-gui.py:242
+msgid "Done — reboot to see the new background"
+msgstr ""

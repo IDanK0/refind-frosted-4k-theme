@@ -1,4 +1,4 @@
-# source photograph, fetched by build.py (not redistributable)
+# source photograph, fetched by build.py
 dune-src.jpeg
 
 # preview renders produced during a build
@@ -6,7 +6,7 @@ mockup*.png
 mock_*.png
 small_*.png
 confronto*.png
-anteprima*.png
+preview*.png
 
 __pycache__/
 *.pyc
