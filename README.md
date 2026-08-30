@@ -126,6 +126,24 @@ before installing.
 
 ## Choosing a background
 
+### The graphical way
+
+```bash
+./background-gui.py
+```
+
+A GTK4 / libadwaita window: every option as a thumbnail already composited into
+the theme, a **+** button to bring in a photo of your own, a switch for automatic
+dimming and a slider for manual, and *Preview* / *Apply*. Applying asks for the
+password once, through polkit.
+
+`./install-launcher.sh` puts it in the Ubuntu applications menu, so it is one
+click away and no terminal is ever needed.
+
+![Picker](screenshots/gui.png)
+
+### The command line way
+
 ```bash
 ./background.py                     # browse the library and pick one
 ./background.py 3                   # or go straight to entry 3

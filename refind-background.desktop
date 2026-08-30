@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Sfondo del menu di avvio
+Name[en]=Boot Menu Background
+Comment=Scegli lo sfondo del menu di avvio, o usa una tua foto
+Comment[en]=Pick the boot menu background, or use a photo of your own
+Exec=/opt/refind-mojave-desktop/background-gui.py
+Icon=refind-background
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=boot;avvio;refind;sfondo;wallpaper;grub;
+StartupNotify=true
