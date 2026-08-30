@@ -105,14 +105,19 @@ lets you start Windows, bypassing everything.
 
 ---
 
+## New systems and USB sticks
+
+Nothing to do: `scanfor internal,external,optical,manual` means rEFInd looks at
+what is attached every time it starts. A bootable stick shows up while it is
+plugged in and disappears when it is not. A system installed on another disk
+shows up with the right icon and its own name, because all 47 of rEFInd's stock
+OS icons have been themed and labelled in advance.
+
+Five entries fit before rEFInd starts scrolling
+(`MaxVisible = 3840/(617+8) - 1`).
+
 ## What not to change without regenerating
 
-The frosted tiles and the "Windows"/"Ubuntu" labels are **baked into
-`background.png`** at fixed coordinates derived from rEFInd's layout
-arithmetic. So:
-
-- `big_icon_size` and `small_icon_size` in `refind.conf` **must stay** 549 and 48
-- if you change them, regenerate with `./build.py`, which recomputes the
-  coordinates and stops with an assertion if the spacing no longer works out
-
-Why those two numbers: see *Geometry* in the [README](README.md).
+`big_icon_size` (549) and `small_icon_size` (48) in `refind.conf` decide the
+size of the frosted plate baked into every icon. If you change them, run
+`./build.py` so the icons and the selection highlight are redrawn to match.

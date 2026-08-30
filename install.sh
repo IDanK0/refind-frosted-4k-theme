@@ -15,8 +15,7 @@ cp -a "$ESP_REFIND/refind.conf" "$ESP_REFIND/refind.conf.bak-$STAMP"
 echo "  -> refind.conf.bak-$STAMP"
 
 echo "Installing assets..."
-for f in background.png font.png icon_windows.png icon_ubuntu.png \
-         selection_big.png selection_small.png; do
+for f in background.png font.png selection_big.png selection_small.png; do
     install -m 0755 "$HERE/assets/$f" "$ESP_REFIND/$f"
     echo "  -> $f"
 done

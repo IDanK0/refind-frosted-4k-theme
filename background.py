@@ -86,8 +86,7 @@ def deploy(assets):
         sys.exit(f"  rEFInd not found at {ESP} — nothing installed.")
     print("  installing (sudo may ask for your password)...")
     files = [(f"{assets}/{n}", f"{ESP}/{n}") for n in
-             ("background.png", "font.png", "icon_windows.png", "icon_ubuntu.png",
-              "selection_big.png", "selection_small.png")]
+             ("background.png", "font.png", "selection_big.png", "selection_small.png")]
     files += [(p, f"{ESP}/icons/{os.path.basename(p)}")
               for p in glob.glob(f"{assets}/icons/*.png")]
     for src, dst in files:
