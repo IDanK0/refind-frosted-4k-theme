@@ -26,11 +26,13 @@ def shot(name, icons, label, scale=(1920, 1080)):
 def handoff(stem, t=0.55):
     """The screen rEFInd shows on the way to any system, drawn the way it draws it."""
     import math
-    from plymouth import still, dot, angle, NDOTS, DOT, RING
-    from build import TILE, TILE1, YSP
-    c = still(ASSETS, os.path.join(ASSETS, "icons", f"{stem}.png")).convert("RGBA")
+    from plymouth import still, dot, angle, layout, NDOTS, DOT, RING
+    from build import BIG
+    path = os.path.join(ASSETS, "icons", f"{stem}.png")
+    c = still(ASSETS, path).convert("RGBA")
     d = dot()
-    cx, cy = c.width // 2, R0Y + TILE + YSP + TILE1 + YSP + 75
+    icon = Image.open(path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
+    _, _, cx, cy = layout(icon)
     for i in range(NDOTS):
         a = angle(t, i)
         c.alpha_composite(d, (int(cx + RING * math.cos(a) - DOT / 2),

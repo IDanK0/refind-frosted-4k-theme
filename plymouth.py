@@ -56,17 +56,38 @@ def pick_icon(assets, os_id):
     sys.exit("no icon found -- run ./build.py first")
 
 
+def layout(icon):
+    """Where the tile and the ring go, so that what you see is in the middle.
+
+    Centring the tile is not the same as centring the picture. The icon is a
+    panel with a name under it inside a larger transparent square, and the ring
+    hangs below that again, so a tile in the middle of the screen leaves the
+    group people actually look at sitting 195px low at 3840x2160.
+
+    So measure the ink rather than the boxes: the top of the panel comes from the
+    icon's own alpha channel, the bottom from where the ring is, and the whole
+    group is shifted until that span is centred. Reading it off the alpha means
+    an icon with a longer name, or none at all, still lands right."""
+    tile_x = (W + XSP - (TILE + XSP)) // 2       # rEFInd's own centring, n = 1
+    tile_y = R0Y
+    cy     = tile_y + TILE + YSP + TILE1 + YSP + 75
+    top    = tile_y + ICON_OFF + icon.split()[3].getbbox()[1]
+    bottom = cy + RING + DOT // 2
+    shift  = H // 2 - (top + bottom) // 2
+    return tile_x, tile_y + shift, W // 2, cy + shift
+
+
 def still(assets, icon_path):
     """The menu, drawn with a single entry: what the splash sits on."""
-    r0x = (W + XSP - (TILE + XSP)) // 2          # rEFInd's own centring, n = 1
-    ix, iy = r0x + ICON_OFF, R0Y + ICON_OFF
+    icon = Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
+    r0x, r0y, _, _ = layout(icon)
+    ix, iy = r0x + ICON_OFF, r0y + ICON_OFF
     c = Image.open(os.path.join(assets, "background.png")).convert("RGBA")
     apply_frost(c, Image.open(os.path.join(assets, "frost_big.png")).convert("RGBA"),
                 ix, iy, FROST)
     c.alpha_composite(Image.open(os.path.join(assets, "selection_big.png")).convert("RGBA"),
-                      (r0x, R0Y))
-    c.alpha_composite(Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS),
-                      (ix, iy))
+                      (r0x, r0y))
+    c.alpha_composite(icon, (ix, iy))
     return c.convert("RGB")
 
 
@@ -288,7 +309,7 @@ def main():
     icon_path, stem = pick_icon(args.assets, os_id)
 
     os.makedirs(args.out, exist_ok=True)
-    cy = R0Y + TILE + YSP + TILE1 + YSP + 75          # under where the tool row sits
+    _, _, _, cy = layout(Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS))
     still(args.assets, icon_path).save(os.path.join(args.out, "background.png"),
                                        "PNG", optimize=True)
     dot().save(os.path.join(args.out, "dot.png"))
@@ -301,6 +322,7 @@ def main():
     size = sum(os.path.getsize(os.path.join(args.out, f)) for f in os.listdir(args.out))
     print(f"  system     {os_name} -> {stem}.png")
     print(f"  spinner    {NDOTS} dots, radius {RING}px, {PERIOD}s a turn, centre y={cy}")
+    print(f"  centred    on the ink, not on the tile")
     print(f"  theme      {args.out}  ({size/1048576:.1f} MB)")
 
 
