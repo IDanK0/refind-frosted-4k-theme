@@ -284,8 +284,15 @@ the boot menu: the tile lands on exactly the pixel it would have occupied there.
 **The screenshots are rendered by the layout code itself.** `make-screenshots.py`
 calls the same `preview()` that `build.py` uses, which walks rEFInd's own
 arithmetic for the row positions and runs the same blur the patched binary runs
-at draw time. A screenshot in this README therefore cannot drift away from what
-the machine draws.
+at draw time.
+
+That is only true where the preview uses the *same artefacts*, and for a while it
+did not: it drew the bottom line of text with a font of its own, at a hardcoded
+grey. So the theme's colours moved and the screenshot did not, and the line
+looked grey in a picture of a menu that draws it warm. It now loads `font.png`
+and applies rEFInd's own rule from `libeg/text.c` — glyphs inverted, r, g and b
+but not alpha, on a background darker than 128 — which is one piece of code
+choosing the colour instead of two.
 
 **Names are baked into the icons.** rEFInd's own label mechanism prints one line
 at the bottom of the screen in the fixed form *"Boot X from Y"* (see *Gotchas*),
