@@ -456,8 +456,29 @@ diff -ruN a/refind/scan.c b/refind/scan.c
              case TAG_FWUPDATE_TOOL:
 diff -ruN a/refind/screen.c b/refind/screen.c
 --- a/refind/screen.c	2024-03-23 23:21:19.000000000 +0100
-+++ b/refind/screen.c	2026-08-30 18:44:25.311775259 +0200
-@@ -577,7 +577,7 @@
++++ b/refind/screen.c	2026-08-30 23:22:54.399101603 +0200
+@@ -246,8 +246,19 @@
+         UseGraphicsMode = FALSE;
+ 
+     if (UseGraphicsMode) {
++        // Hand the next program a black screen.
++        //
++        // BltClearScreen(FALSE) fills the screen with MenuBackgroundPixel, which
++        // is set to Banner->PixelData[0] -- the top-left pixel of the background
++        // image. That is a sensible colour to extend a banner with, and a
++        // terrible one to leave behind: a boot loader that draws its own logo
++        // draws it over whatever is already in the framebuffer, and never clears
++        // first. Windows does exactly that, so one arbitrary pixel sampled from
++        // the corner of somebody's wallpaper becomes the background of the
++        // Windows boot animation. Every OS's boot graphics is designed against
++        // black, so give it black.
+         SwitchToGraphics();
+-        BltClearScreen(FALSE);
++        egClearScreen(&DarkBackgroundPixel);
+     } else {
+         egClearScreen(&DarkBackgroundPixel);
+         DrawScreenHeader(Title);
+@@ -577,7 +588,7 @@
       // blit to screen and clean up
       if (CompImage != NULL) {
           if (CompImage->HasAlpha)
@@ -466,4 +487,3 @@ diff -ruN a/refind/screen.c b/refind/screen.c
           else
               egDrawImage(CompImage, XPos, YPos);
           egFreeImage(CompImage);
-I file binari a/refind/tools_x64/gptsync_x64.efi e b/refind/tools_x64/gptsync_x64.efi sono diversi

@@ -121,6 +121,37 @@ fixes any of them.
 
 ---
 
+## The splash carries on from the menu
+
+![The Plymouth splash](screenshots/plymouth.png)
+
+Pick Ubuntu and the menu does not disappear: the same photograph stays, with the
+tile you chose still on it, and a ring of dots turns underneath while the system
+comes up. `./plymouth.py` builds it, `sudo ./install-plymouth.sh` installs it.
+
+<img src="screenshots/spinner.gif" width="200" align="right">
+
+What the boot menu needed a patched bootloader for is free here. A panel drawn
+into a rEFInd icon cannot blur what is behind it because it does not know where
+it will end up; a Plymouth background never moves and neither does the panel, so
+the frost is composited once, at build time, into `background.png`. Decoding
+3840×2160 costs 85 ms, once.
+
+The dots are the only thing that moves, and they are the only thing the script
+computes. Each one walks the same eased path a little later than the one before,
+so they gather where the path is slow and string out where it is fast. The four
+numbers that govern it are not free: the dots span
+`2π·g'(p)·(NDOTS−1)·STAGGER` of the circle and `g'` runs between `1−SWING` and
+`1+SWING`, so the arc closes to 81° and opens to 279°. At its tightest that is
+156px of arc holding 120px of dots — they gather without ever colliding, which
+is the whole trick.
+
+The theme picks its icon from `/etc/os-release`, so it shows the logo and the
+name of whatever it was built on, and it is generated from the same geometry as
+the boot menu: the tile lands on exactly the pixel it would have occupied there.
+
+---
+
 ## Design notes
 
 **The screenshots are rendered by the layout code itself.** `make-screenshots.py`
@@ -361,16 +392,31 @@ Shim consults it only under Secure Boot — so with Secure Boot off the key icon
 in the tool row leads nowhere. The patch makes the tool conditional on
 `secure_mode()`, so it appears exactly when it can do something.
 
-**6. Icons are upscaled without warning.** `big_icon_size 256` against a 128 px
+**6. rEFInd hands the next OS a screen painted one colour from your wallpaper.**
+`BeginExternalScreen()` calls `BltClearScreen(FALSE)`, which fills the screen
+with `MenuBackgroundPixel`:
+
+```c
+MenuBackgroundPixel = Banner->PixelData[0];
+```
+
+— the **top-left pixel of the background image**. A sensible colour to extend a
+banner with, and a terrible one to leave behind: a boot loader that draws its own
+logo draws it over whatever is in the framebuffer and never clears first. Windows
+does exactly that, so one pixel from the corner of a photograph becomes the
+background of the Windows 11 boot animation, spinner and all. Every OS's boot
+graphics is designed against black; the patch gives it black.
+
+**7. Icons are upscaled without warning.** `big_icon_size 256` against a 128 px
 icon file silently doubles it and it looks soft. Always ship art at or above the
 configured size.
 
-**7. On Ubuntu, `recordfail` overrides `GRUB_TIMEOUT`.** If GRUB is chainloaded as
+**8. On Ubuntu, `recordfail` overrides `GRUB_TIMEOUT`.** If GRUB is chainloaded as
 a silent pass-through, an interrupted boot leaves `recordfail=1` in `grubenv`
 and `/etc/grub.d/00_header` then forces a 30-second visible menu. Set
 `GRUB_RECORDFAIL_TIMEOUT=0`.
 
-**8. Config paths have two different bases.** `banner`, `font` and `selection_*`
+**9. Config paths have two different bases.** `banner`, `font` and `selection_*`
 are relative to the directory holding `refind_x64.efi`; `icon` inside a
 `menuentry` is absolute from the ESP root. Mixing them up fails **silently** —
 the file is simply never loaded.

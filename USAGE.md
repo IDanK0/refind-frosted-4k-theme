@@ -116,6 +116,27 @@ OS icons have been themed and labelled in advance.
 Five entries fit before rEFInd starts scrolling
 (`MaxVisible = 3840/(617+8) - 1`).
 
+## The splash
+
+`sudo ./install-plymouth.sh` replaces Ubuntu's spinner with the boot menu
+carried on: the same photograph, the same frosted tile holding the logo and the
+name of this system, and a ring of dots turning underneath. Rebuild it after
+changing the background with `./build.py && ./plymouth.py`, then install again.
+
+The theme reads `/etc/os-release` to choose its icon, so it labels itself
+correctly on whatever it is built on. `--os <stem>` overrides that.
+
+To go back to Ubuntu's own splash:
+
+```bash
+sudo update-alternatives --set default.plymouth \
+     /usr/share/plymouth/themes/bgrt/bgrt.plymouth
+sudo update-initramfs -u
+```
+
+The installer keeps the working initramfs as `initrd.img-<version>.before-refind-frosted`
+before rebuilding.
+
 ## What not to change without regenerating
 
 `big_icon_size` (549) and `small_icon_size` (48) in `refind.conf` decide the
