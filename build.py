@@ -155,6 +155,24 @@ def accent(im):
     return (math.atan2(y, x) % (2 * math.pi)) / (2 * math.pi), sat / weight
 
 
+# How far each part of the theme is pushed towards the photograph's hue, as
+# (factor, floor, ceiling, lightness) applied to the picture's own saturation.
+# The floor matters: scaling saturation purely in proportion leaves a muted
+# photograph with a theme indistinguishable from grey, which is not what asking
+# for the picture's colour means. The ceiling stops a vivid one shouting.
+TONE = {
+    "plate": (0.35, 0.08, 0.20, 0.93),   # the panel's own tint
+    "dark":  (0.90, 0.30, 0.60, 0.22),   # the dark end of a logo's ramp
+    "light": (0.45, 0.10, 0.26, 0.90),   # the light end, and the border, and the names
+    "glyph": (0.45, 0.10, 0.26, 0.90),   # the tool row
+    "text":  (0.45, 0.10, 0.26, 0.63),   # the line rEFInd writes at the bottom
+}
+# Chosen by rendering the menu at three strengths and looking: weaker and the
+# border is indistinguishable from white, stronger and it reads as a pink theme
+# rather than as a theme that belongs to the photograph.
+GREY_PHOTO = 0.04       # below this the picture has no colour to lend
+
+
 def shades(im, strength=1.0):
     """Every colour in the theme, drawn from the photograph.
 
@@ -167,18 +185,16 @@ def shades(im, strength=1.0):
     if strength <= 0:
         return NEUTRAL
     h, s = accent(im)
-    def hsv(sf, cap, v):
-        return tuple(int(x * 255) for x in colorsys.hsv_to_rgb(h, min(s * sf, cap), v))
-    def mix(a, b, k):
-        return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+    if s < GREY_PHOTO:
+        return NEUTRAL
     k = min(1.0, strength)
-    return {
-        "plate": mix(NEUTRAL["plate"], hsv(0.16, 0.16, 0.93), k),
-        "dark":  mix(NEUTRAL["dark"],  hsv(0.85, 0.60, 0.22), k),
-        "light": mix(NEUTRAL["light"], hsv(0.30, 0.22, 0.90), k),
-        "glyph": mix(NEUTRAL["glyph"], hsv(0.30, 0.22, 0.90), k),
-        "text":  mix(NEUTRAL["text"],  hsv(0.30, 0.22, 0.63), k),
-    }
+    def mix(a, b):
+        return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+    out = {}
+    for part, (sf, lo, hi, v) in TONE.items():
+        c = colorsys.hsv_to_rgb(h, max(lo, min(s * sf, hi)), v)
+        out[part] = mix(NEUTRAL[part], tuple(int(x * 255) for x in c))
+    return out
 
 
 def duotone(img, dark, light, strength):
@@ -202,7 +218,7 @@ def duotone(img, dark, light, strength):
 
 
 # -------------------------------------------------------------------- glass
-def plate(s, fill=None):
+def plate(s, fill=None, light=(255, 255, 255)):
     """A frosted panel that does not know what is behind it.
 
     It cannot blur what is behind it, since it does not know where it will be
@@ -214,13 +230,13 @@ def plate(s, fill=None):
                         fill=tuple(fill or (214, 226, 248)) + (GLASS_A,))
     g = Image.new("L", (1, s * SS))
     g.putdata([int(VEIL_A * (1 - i / (s * SS))) for i in range(s * SS)])   # raking light
-    veil = Image.new("RGBA", (s*SS, s*SS), (255, 255, 255, 255))
+    veil = Image.new("RGBA", (s*SS, s*SS), tuple(light) + (255,))
     veil.putalpha(g.resize((s*SS, s*SS)))
     m = Image.new("L", (s*SS, s*SS), 0)
     ImageDraw.Draw(m).rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=255)
     p.alpha_composite(Image.composite(veil, Image.new("RGBA", (s*SS, s*SS), (0,0,0,0)), m))
     ImageDraw.Draw(p).rounded_rectangle([3, 3, s*SS-4, s*SS-4], radius=r,
-                                        outline=(255, 255, 255, 150), width=5 * SS)
+                                        outline=tuple(light) + (150,), width=5 * SS)
     p = p.resize((s, s), Image.LANCZOS)
     a = p.split()[3]
     f = Image.new("L", (1, s)); f.putdata([int(255 * (1 - .28 * i / s)) for i in range(s)])
@@ -344,7 +360,7 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     say(f"  font       cell {cw}x{ch}, written {ink} -> {tuple(C['text'])} on screen")
 
     tone = (C["dark"], C["light"], tint / 100.0)
-    pl = plate(PLATE, C["plate"])
+    pl = plate(PLATE, C["plate"], C["light"])
     for stem, name, drawer in (("os_win8", "Windows", logo_windows),
                                ("os_win",  "Windows", logo_windows),
                                ("os_ubuntu", "Ubuntu", logo_ubuntu)):

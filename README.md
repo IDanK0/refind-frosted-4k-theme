@@ -156,7 +156,18 @@ and every colour in the theme is then a saturation and a lightness away from it.
 A logo is not washed over with that colour, which would flatten it. Its own
 lightness picks a point on a ramp between a dark and a light version of the hue,
 so the shape and its internal contrast survive while the hue becomes the
-picture's. Windows blue lands on (169, 150, 156) against this photograph.
+picture's.
+
+How far to push it is not a matter of taste alone: scaling saturation purely in
+proportion to the photograph's leaves a muted picture with a theme
+indistinguishable from grey, which is not what asking for the picture's colour
+means, so each part of the theme has a floor as well as a ceiling. The values in
+`TONE` were chosen by rendering the menu at three strengths and looking. Weaker,
+and the panel's border is indistinguishable from white — which is what gives the
+game away, since the border and the raking veil are the parts of the glass you
+actually see, and tinting only the fill underneath them changes nothing.
+Stronger, and it reads as a pink theme rather than as a theme belonging to the
+photograph.
 
 `--tint 0` puts Windows back to blue and Ubuntu back to orange, and the picker
 has a switch for it.
