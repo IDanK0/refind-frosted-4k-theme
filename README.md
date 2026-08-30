@@ -121,13 +121,44 @@ fixes any of them.
 
 ---
 
+## The boot logo of everything
+
+![The same screen for three systems](screenshots/handoff-any.png)
+
+Pick anything and rEFInd shows it on its own before handing over: the tile the
+menu drew, with a ring of dots turning underneath, and then a black screen for
+whatever comes next.
+
+Plymouth cannot do this. It lives inside Ubuntu's initramfs and runs only when
+Ubuntu is what you picked, so it can never be the boot logo of Windows, or of a
+stick plugged in this morning. rEFInd is the one thing that runs before every
+one of them, and it already holds the icon for each entry it found — logo, name
+and all. So the splash lives there, and a system nobody has installed yet
+already has its boot logo, correct on the first boot, without being told
+anything.
+
+`handoff_splash` is how long it stays, in milliseconds; 1800 is one full turn of
+the ring, and 0 switches it off. It is the last thing drawn before the screen
+goes black, which is why it does not collide with the logo Windows draws next.
+
+rEFInd is an EFI application and never sets up the FPU, so none of this is
+floating point. Angles are 4096ths of a turn and sines are 4096ths of one, read
+from a 65-entry quarter-wave table with linear interpolation. Against the
+double-precision version the dots land within **0.78 px** on a 110 px radius —
+the two animations are the same animation, which is the point, because the next
+one to draw it is Plymouth.
+
+---
+
 ## The splash carries on from the menu
 
 ![The Plymouth splash](screenshots/plymouth.png)
 
 Pick Ubuntu and the menu does not disappear: the same photograph stays, with the
 tile you chose still on it, and a ring of dots turns underneath while the system
-comes up. `./plymouth.py` builds it, `sudo ./install-plymouth.sh` installs it.
+comes up — the ring rEFInd was already turning, continued at the same size, the
+same speed and the same easing. `./plymouth.py` builds it,
+`sudo ./install-plymouth.sh` installs it.
 
 <img src="screenshots/spinner.gif" width="200" align="right">
 
