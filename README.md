@@ -159,6 +159,14 @@ hue, and the saturations are deliberately small: around 0.09, which reads as
 warmth rather than as a colour. The aim is a warm grey that belongs to the
 photograph, not a coloured theme.
 
+![The same theme against six photographs](screenshots/library.png)
+
+Nothing above is written down per photograph — `library-preview.py` renders the
+menu against every picture in the library, and each of those hues is what the
+picture itself yielded. Two warm deserts come out at 17° and 25°, four night
+skies between 215° and 229°, and a photograph of your own gets whatever it
+happens to contain.
+
 A logo is not washed over with that colour, which would flatten it. Its own
 lightness picks a point on a ramp between a dark and a light version of the hue,
 so the shape and its internal contrast survive while the hue becomes the

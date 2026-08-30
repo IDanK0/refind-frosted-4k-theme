@@ -10,3 +10,6 @@ preview*.png
 
 __pycache__/
 *.pyc
+
+# renders made by library-preview.py
+library/.preview/
