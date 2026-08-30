@@ -10,7 +10,9 @@
       "author": "Great Sand Dunes National Park and Preserve",
       "source": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Mars_Over_Dunes_%2849179272651%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
       "luminance": 30.9,
-      "suggested_darken": 0
+      "suggested_darken": 0,
+      "detail": 2.11,
+      "suggested_blur": 4
     },
     {
       "slug": "clear-desert-night-sky",
@@ -20,7 +22,9 @@
       "author": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
       "source": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Clear_Desert_Night_Sky_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
       "luminance": 153.8,
-      "suggested_darken": 80
+      "suggested_darken": 80,
+      "detail": 2.98,
+      "suggested_blur": 8
     },
     {
       "slug": "desert-skies",
@@ -30,7 +34,9 @@
       "author": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
       "source": "https://upload.wikimedia.org/wikipedia/commons/9/98/Desert_Skies_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
       "luminance": 107.4,
-      "suggested_darken": 72
+      "suggested_darken": 72,
+      "detail": 1.46,
+      "suggested_blur": 4
     },
     {
       "slug": "morning-light-on-dunes",
@@ -40,7 +46,9 @@
       "author": "Great Sand Dunes National Park and Preserve",
       "source": "https://upload.wikimedia.org/wikipedia/commons/d/d7/Morning_Light_on_Dunes_%2850365974052%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
       "luminance": 66.8,
-      "suggested_darken": 55
+      "suggested_darken": 55,
+      "detail": 9.92,
+      "suggested_blur": 12
     },
     {
       "slug": "snowy-dunes-in-moonlight",
@@ -50,7 +58,9 @@
       "author": "Great Sand Dunes National Park and Preserve",
       "source": "https://upload.wikimedia.org/wikipedia/commons/1/15/Snowy_Dunes_in_Moonlight_%2831169526377%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
       "luminance": 135.9,
-      "suggested_darken": 78
+      "suggested_darken": 78,
+      "detail": 4.27,
+      "suggested_blur": 8
     },
     {
       "slug": "dunes-crestone-peaks-stars",
@@ -60,7 +70,10 @@
       "author": "Great Sand Dunes National Park and Preserve",
       "source": "https://upload.wikimedia.org/wikipedia/commons/2/25/Dunes%2C_Crestone_Peaks_and_Stars_on_a_Quarter_Moon_Night_%2816992313172%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
       "luminance": 41.6,
-      "suggested_darken": 28
+      "suggested_darken": 28,
+      "detail": 2.34,
+      "suggested_blur": 4
     }
-  ]
+  ],
+  "default_blur": 0
 }
