@@ -37,7 +37,10 @@ GLASS_A   = 24                    # how much of the panel's own tint there is
 VEIL_A    = 10                    # the raking light across the top of it
 RIM_A     = 205                   # the lit edge of the pane
 HAIR_A    = 210                   # a bright hairline just inside the top edge
-SWEEP_A   = 34                    # a reflection lying diagonally across the pane
+SWEEP_A   = 0                     # a reflection lying diagonally across the pane;
+                                  # 0 is off, and off is the default -- it reads as a
+                                  # streak more than as glass. The rim and the hairline
+                                  # carry the surface on their own.
 SWEEP_AT, SWEEP_W = 0.34, 0.22    # where it falls, and how broad it is
 # These three decide whether the panel reads as glass or as a painted tile. Too
 # much blur and too much tint compound: a wide blur averages the whole panel to
@@ -51,7 +54,7 @@ PLATE_Y   = 64                    # pushed up to leave room for the name
 LOGO      = 218
 NAME_SIZE = 56
 DOT_PX    = 20                    # one dot of the spinner, at 3840x2160
-SHADOW_BLUR, SHADOW_DROP, SHADOW_A = 26, 14, 130   # only visible on a light photograph
+SHADOW_BLUR, SHADOW_DROP, SHADOW_A = 34, 10, 58    # only visible on a light photograph
 NAME_Y    = PLATE_Y + PLATE + 22
 ICON_OFF  = (TILE - BIG) // 2     # icon is centred in the tile
 PLATE_X   = (BIG - PLATE) // 2
