@@ -1,5 +1,5 @@
 diff -ruN a/EfiLib/gnuefi-helper.c b/EfiLib/gnuefi-helper.c
---- a/EfiLib/gnuefi-helper.c	2026-08-30 18:18:51.640710086 +0200
+--- a/EfiLib/gnuefi-helper.c	2024-01-28 19:51:20.000000000 +0100
 +++ b/EfiLib/gnuefi-helper.c	2026-08-30 18:13:44.943692147 +0200
 @@ -109,6 +109,7 @@
    @return The length of String.
@@ -17,10 +17,12 @@ diff -ruN a/EfiLib/gnuefi-helper.c b/EfiLib/gnuefi-helper.c
  
  /**
    Determine whether a given device path is valid.
+I file binari a/EfiLib/libEfiLib.a e b/EfiLib/libEfiLib.a sono diversi
+I file binari a/gzip/libgzip.a e b/gzip/libgzip.a sono diversi
 diff -ruN a/libeg/image.c b/libeg/image.c
---- a/libeg/image.c	2026-08-30 18:18:51.640868375 +0200
-+++ b/libeg/image.c	2026-08-30 18:16:46.097237934 +0200
-@@ -632,6 +632,112 @@
+--- a/libeg/image.c	2024-04-04 00:04:55.000000000 +0200
++++ b/libeg/image.c	2026-08-30 18:45:36.242819621 +0200
+@@ -632,6 +632,126 @@
      }
  }
  
@@ -76,6 +78,20 @@ diff -ruN a/libeg/image.c b/libeg/image.c
 +            Dst[x * Hgt + y] = Src[y * W + x];
 +}
 +
++// Blur Image wherever Mask is opaque, leaving it sharp where Mask is clear.
++//
++// Mask is a stencil of a sheet of glass, not a picture of one: its alpha says
++// WHERE the glass is, not how transparent it is. That distinction is the whole
++// point. Blending in proportion to a translucent panel's own alpha yields a
++// background that is a quarter blurred and three quarters sharp, which reads as
++// a slightly soft photograph rather than as glass. Real frosted glass scatters
++// everything that passes through it: behind the pane the view is *fully*
++// blurred, and the pane's own tint is then laid over that. So the pane's
++// translucency belongs to the compositing step that follows, and the only thing
++// asked of the mask here is the shape of the pane.
++//
++// The stencil is centred the way BltImageCompositeBadge() centres an icon, so a
++// mask built against the icon's geometry lands exactly on the icon's panel.
 +VOID egFrostImage(IN OUT EG_IMAGE *Image, IN EG_IMAGE *Mask, IN UINTN Radius) {
 +    UINTN     W, Hgt, x, y, i, Total, Alpha, RevAlpha, Temp;
 +    INTN      MaskX, MaskY, mx, my;
@@ -133,9 +149,10 @@ diff -ruN a/libeg/image.c b/libeg/image.c
  VOID egRawCompose(IN OUT EG_PIXEL *CompBasePtr, IN EG_PIXEL *TopBasePtr,
                    IN UINTN Width, IN UINTN Height,
                    IN UINTN CompLineOffset, IN UINTN TopLineOffset)
+I file binari a/libeg/libeg.a e b/libeg/libeg.a sono diversi
 diff -ruN a/libeg/libeg.h b/libeg/libeg.h
---- a/libeg/libeg.h	2026-08-30 18:18:51.640956762 +0200
-+++ b/libeg/libeg.h	2026-08-30 18:16:46.097311082 +0200
+--- a/libeg/libeg.h	2024-01-28 19:51:20.000000000 +0100
++++ b/libeg/libeg.h	2026-08-30 18:43:56.375084899 +0200
 @@ -127,6 +127,7 @@
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
                       IN EG_PIXEL *Color);
@@ -144,19 +161,40 @@ diff -ruN a/libeg/libeg.h b/libeg/libeg.h
  
  UINTN egGetFontHeight(VOID);
  UINTN egGetFontCellWidth(VOID);
+@@ -137,7 +138,7 @@
+ 
+ VOID egClearScreen(IN EG_PIXEL *Color);
+ VOID egDrawImage(IN EG_IMAGE *Image, IN UINTN ScreenPosX, IN UINTN ScreenPosY);
+-VOID egDrawImageWithTransparency(EG_IMAGE *Image, EG_IMAGE *BadgeImage, UINTN XPos, UINTN YPos, UINTN Width, UINTN Height);
++VOID egDrawImageWithTransparency(EG_IMAGE *Image, EG_IMAGE *BadgeImage, UINTN XPos, UINTN YPos, UINTN Width, UINTN Height, EG_IMAGE *FrostMask);
+ VOID egDrawImageArea(IN EG_IMAGE *Image,
+                      IN UINTN AreaPosX, IN UINTN AreaPosY,
+                      IN UINTN AreaWidth, IN UINTN AreaHeight,
 diff -ruN a/libeg/screen.c b/libeg/screen.c
---- a/libeg/screen.c	2026-08-30 18:18:51.640841334 +0200
-+++ b/libeg/screen.c	2026-08-30 18:17:11.921633375 +0200
-@@ -524,6 +524,7 @@
+--- a/libeg/screen.c	2024-01-28 19:51:20.000000000 +0100
++++ b/libeg/screen.c	2026-08-30 18:43:56.375177167 +0200
+@@ -518,12 +518,18 @@
+ // Display an unselected icon on the screen, so that the background image shows
+ // through the transparency areas. The BadgeImage may be NULL, in which case
+ // it's not composited in.
++//
++// FrostMask, if given, is a stencil of a sheet of glass: the background is
++// blurred wherever the mask is opaque, before the icon is composited over it.
++// Pass NULL for anything that is not glass -- text, arrows, the mouse pointer.
+ VOID egDrawImageWithTransparency(EG_IMAGE *Image, EG_IMAGE *BadgeImage,
+-                                 UINTN XPos, UINTN YPos, UINTN Width, UINTN Height) {
++                                 UINTN XPos, UINTN YPos, UINTN Width, UINTN Height,
++                                 EG_IMAGE *FrostMask) {
+     EG_IMAGE *Background;
  
      Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos, Width, Height);
      if (Background != NULL) {
-+        egFrostImage(Background, Image, GlobalConfig.FrostRadius);
++        egFrostImage(Background, FrostMask, GlobalConfig.FrostRadius);
          BltImageCompositeBadge(Background, Image, BadgeImage, XPos, YPos);
          egFreeImage(Background);
      }
 diff -ruN a/Make.common b/Make.common
---- a/Make.common	2026-08-30 18:18:51.640506281 +0200
+--- a/Make.common	2024-04-06 19:05:14.000000000 +0200
 +++ b/Make.common	2026-08-30 18:14:51.605763246 +0200
 @@ -83,7 +83,7 @@
  CFLAGS          = $(OPTIMFLAGS) -fno-stack-protector -fshort-wchar -Wall
@@ -176,10 +214,11 @@ diff -ruN a/Make.common b/Make.common
  FORMAT_DRIVER   = --target=efi-bsdrv-$(ARCH)
  
  #
+I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -ruN a/refind/config.c b/refind/config.c
---- a/refind/config.c	2026-08-30 18:18:51.639903512 +0200
-+++ b/refind/config.c	2026-08-30 18:17:11.921520562 +0200
-@@ -800,6 +800,11 @@
+--- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
++++ b/refind/config.c	2026-08-30 18:43:56.375287365 +0200
+@@ -800,6 +800,17 @@
                  }
              } // for (graphics_on tokens)
  
@@ -188,31 +227,243 @@ diff -ruN a/refind/config.c b/refind/config.c
 +            if (GlobalConfig.FrostRadius > 200)
 +                GlobalConfig.FrostRadius = 200;
 +
++        } else if (MyStriCmp(TokenList[0], L"frost_mask_big")) {
++            HandleString(TokenList, TokenCount, &(GlobalConfig.FrostMaskBigFileName));
++
++        } else if (MyStriCmp(TokenList[0], L"frost_mask_small")) {
++            HandleString(TokenList, TokenCount, &(GlobalConfig.FrostMaskSmallFileName));
++
          } else if (MyStriCmp(TokenList[0], L"font") && (TokenCount == 2)) {
              egLoadFont(TokenList[1]);
  
 diff -ruN a/refind/global.h b/refind/global.h
---- a/refind/global.h	2026-08-30 18:18:51.640026705 +0200
-+++ b/refind/global.h	2026-08-30 18:17:11.921396047 +0200
-@@ -393,6 +393,9 @@
+--- a/refind/global.h	2024-04-04 21:48:57.000000000 +0200
++++ b/refind/global.h	2026-08-30 18:43:56.375230853 +0200
+@@ -393,6 +393,11 @@
     UINT32_LIST      *CsrValues;
     UINTN            ShowTools[NUM_TOOLS];
     CHAR8            ScanFor[NUM_SCAN_OPTIONS]; // codes of types of loaders for which to scan
 +   // Radius, in pixels, of the frosted-glass blur applied to the background
 +   // under the translucent parts of an icon. 0 disables it.
 +   UINTN            FrostRadius;
++   CHAR16           *FrostMaskBigFileName;
++   CHAR16           *FrostMaskSmallFileName;
  } REFIT_CONFIG;
  
  // Global variables
 diff -ruN a/refind/menu.c b/refind/menu.c
---- a/refind/menu.c	2026-08-30 18:18:51.639960129 +0200
-+++ b/refind/menu.c	2026-08-30 18:17:11.921589222 +0200
-@@ -1083,6 +1083,7 @@
+--- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
++++ b/refind/menu.c	2026-08-30 18:44:25.278421931 +0200
+@@ -97,6 +97,7 @@
+ #define TILE_YSPACING (16)
+ 
+ static EG_IMAGE *SelectionImages[2] = { NULL, NULL };
++static EG_IMAGE *FrostImages[2] = { NULL, NULL };
+ static EG_PIXEL SelectionBackgroundPixel = { 0xff, 0xff, 0xff, 0 };
+ 
+ EFI_EVENT* WaitList = NULL;
+@@ -118,7 +119,7 @@
+ 
+ static VOID InitSelection(VOID)
+ {
+-    EG_IMAGE    *TempSmallImage = NULL, *TempBigImage = NULL;
++    EG_IMAGE    *TempSmallImage = NULL, *TempBigImage = NULL, *TempFrostImage = NULL;
+     BOOLEAN     LoadedSmallImage = FALSE;
+ 
+     if (!AllowGraphicsMode)
+@@ -150,6 +151,27 @@
+     }
+     SelectionImages[0] = egScaleImage(TempBigImage, TileSizes[0], TileSizes[0]);
+ 
++    // Load the frosted-glass stencils. These are scaled to the *icon* size, not
++    // the tile size, because egFrostImage() centres them the way
++    // BltImageCompositeBadge() centres the icon -- so a stencil drawn against
++    // the icon's own geometry lands exactly on the icon's glass panel.
++    if (GlobalConfig.FrostMaskBigFileName != NULL) {
++        TempFrostImage = egLoadImage(SelfDir, GlobalConfig.FrostMaskBigFileName, TRUE);
++        if (TempFrostImage) {
++            FrostImages[0] = egScaleImage(TempFrostImage, GlobalConfig.IconSizes[ICON_SIZE_BIG],
++                                          GlobalConfig.IconSizes[ICON_SIZE_BIG]);
++            egFreeImage(TempFrostImage);
++        }
++    }
++    if (GlobalConfig.FrostMaskSmallFileName != NULL) {
++        TempFrostImage = egLoadImage(SelfDir, GlobalConfig.FrostMaskSmallFileName, TRUE);
++        if (TempFrostImage) {
++            FrostImages[1] = egScaleImage(TempFrostImage, GlobalConfig.IconSizes[ICON_SIZE_SMALL],
++                                          GlobalConfig.IconSizes[ICON_SIZE_SMALL]);
++            egFreeImage(TempFrostImage);
++        }
++    }
++
+     if (TempSmallImage)
+         egFreeImage(TempSmallImage);
+     if (TempBigImage)
+@@ -857,7 +879,7 @@
+ 
+         // render the text
+         egRenderText(Text, TextBuffer, egGetFontCellWidth(), TEXT_YMARGIN, (Bg.r + Bg.g + Bg.b) / 3);
+-        egDrawImageWithTransparency(TextBuffer, NULL, XPos, YPos, TextBuffer->Width, TextBuffer->Height);
++        egDrawImageWithTransparency(TextBuffer, NULL, XPos, YPos, TextBuffer->Width, TextBuffer->Height, NULL);
+         egFreeImage(TextBuffer);
+     }
+ } /* VOID DrawText() */
+@@ -905,7 +927,7 @@
+ 
+     // render the text
+     egRenderText(Text, TextBuffer, 0, 0, AverageBrightness(TextBuffer));
+-    egDrawImageWithTransparency(TextBuffer, NULL, XPos, YPos, TextBuffer->Width, TextBuffer->Height);
++    egDrawImageWithTransparency(TextBuffer, NULL, XPos, YPos, TextBuffer->Width, TextBuffer->Height, NULL);
+     egFreeImage(TextBuffer);
+ }
+ 
+@@ -1083,13 +1105,15 @@
          Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos,
                                   SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height);
          if (Background) {
-+            egFrostImage(Background, Entry->Image, GlobalConfig.FrostRadius);
++            egFrostImage(Background, FrostImages[Entry->Row], GlobalConfig.FrostRadius);
              egComposeImage(Background, SelectionImages[Entry->Row], 0, 0);
              BltImageCompositeBadge(Background, Entry->Image, Entry->BadgeImage, XPos, YPos);
              egFreeImage(Background);
+         } // if
+     } else { // Image not selected; copy background
+         egDrawImageWithTransparency(Entry->Image, Entry->BadgeImage, XPos, YPos,
+-                                    SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height);
++                                    SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height,
++                                    FrostImages[Entry->Row]);
+     } // if/else
+ } // VOID DrawMainMenuEntry()
+ 
+@@ -1187,7 +1211,7 @@
+ // PosY is specified as the center value, PosX is left aligned.
+ static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
+     UINTN TopY = PosY - (Arrow->Height / 2);
+-    if (visible) egDrawImageWithTransparency(Arrow, NULL, PosX, TopY, Arrow->Width, Arrow->Height);
++    if (visible) egDrawImageWithTransparency(Arrow, NULL, PosX, TopY, Arrow->Width, Arrow->Height, NULL);
+     else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
+ }
+ 
+diff -ruN a/refind/scan.c b/refind/scan.c
+--- a/refind/scan.c	2024-04-04 17:18:11.000000000 +0200
++++ b/refind/scan.c	2026-08-30 18:45:36.243045920 +0200
+@@ -638,22 +638,45 @@
+ static LOADER_ENTRY * AddLoaderEntry(IN OUT CHAR16 *LoaderPath, IN CHAR16 *LoaderTitle,
+                                      IN REFIT_VOLUME *Volume, IN BOOLEAN SubScreenReturn) {
+     LOADER_ENTRY  *Entry;
++    CHAR16        *DerivedTitle = NULL, *Title;
+ 
+     CleanUpPathNameSlashes(LoaderPath);
+     Entry = InitializeLoaderEntry(NULL);
+     if (Entry != NULL) {
++        // A loader that arrives without a title of its own is labelled with its
++        // own path -- "EFI\ubuntu\grubx64.efi" -- which names a file, not a
++        // system. rEFInd already reads the system out of that same path to pick
++        // the icon: SetLoaderDefaults() takes FindLastDirName() as its first icon
++        // hint, which is exactly why the Ubuntu entry gets the Ubuntu logo. Read
++        // it here too, and the menu names systems instead of files.
++        if (LoaderTitle == NULL) {
++            DerivedTitle = FindLastDirName(LoaderPath);
++            if ((DerivedTitle != NULL) && (DerivedTitle[0] != L'\0')) {
++                if ((DerivedTitle[0] >= L'a') && (DerivedTitle[0] <= L'z'))
++                    DerivedTitle[0] -= (L'a' - L'A');
++            } else {
++                MyFreePool(DerivedTitle);
++                DerivedTitle = NULL;
++            }
++        }
++        Title = (LoaderTitle != NULL) ? LoaderTitle
++                                      : ((DerivedTitle != NULL) ? DerivedTitle : LoaderPath);
+         Entry->DiscoveryType = DISCOVERY_TYPE_AUTO;
+-        Entry->Title = StrDuplicate((LoaderTitle != NULL) ? LoaderTitle : LoaderPath);
++        Entry->Title = StrDuplicate(Title);
+         LOG(1, LOG_LINE_NORMAL, L"Adding loader entry for '%s'", Entry->Title);
+         LOG(2, LOG_LINE_NORMAL, L"Loader path is '%s'", LoaderPath);
+         // Extra space at end of Entry->me.Title enables searching on Volume->VolName even if another volume
+         // name is identical except for something added to the end (e.g., VolB1 vs. VolB12).
+         // Note: Volume->VolName will be NULL for network boot programs.
+-        if ((Volume->VolName) && (!MyStriCmp(Volume->VolName, L"Recovery HD")))
+-            Entry->me.Title = PoolPrint(L"Boot %s from %s ",
+-                                        (LoaderTitle != NULL) ? LoaderTitle : LoaderPath, Volume->VolName);
++        // Naming the volume earns its place only when it tells the two apart.
++        // Everything installed on this machine boots off the one ESP that rEFInd
++        // itself sits on, so "from <that ESP>" is on every entry and distinguishes
++        // none of them; "from <a USB stick>" is the whole point of the line.
++        if ((Volume->VolName) && (!MyStriCmp(Volume->VolName, L"Recovery HD")) &&
++            (Volume->DeviceHandle != SelfLoadedImage->DeviceHandle))
++            Entry->me.Title = PoolPrint(L"Boot %s from %s ", Title, Volume->VolName);
+         else
+-            Entry->me.Title = PoolPrint(L"Boot %s ", (LoaderTitle != NULL) ? LoaderTitle : LoaderPath);
++            Entry->me.Title = PoolPrint(L"Boot %s ", Title);
+         Entry->me.Row = 0;
+         Entry->me.BadgeImage = Volume->VolBadgeImage;
+         if ((LoaderPath != NULL) && (LoaderPath[0] != L'\\')) {
+@@ -670,6 +693,7 @@
+     } else {
+         LOG(1, LOG_LINE_NORMAL, L"Unable to initialize loader entry in AddLoaderEntry()!");
+     }
++    MyFreePool(DerivedTitle);
+ 
+     return(Entry);
+ } // LOADER_ENTRY * AddLoaderEntry()
+@@ -935,6 +959,17 @@
+               HasSignedCounterpart(Volume, FullName) || /* a file with same name plus ".efi.signed" is present */
+               FilenameIn(Volume, Path, DirEntry->FileName, GlobalConfig.DontScanFiles) ||
+               !IsValidLoader(Volume->RootDir, FullName)) {
++                // A loader refused here must not walk back in under another name.
++                // EFI\BOOT\bootx64.efi is very often a byte-for-byte copy of the
++                // shim just skipped -- shimx64.efi is in DONT_SCAN_FILES -- and the
++                // fallback check below only ever sees files that were accepted, so
++                // rEFInd ends up refusing a program and offering the identical copy
++                // of it as "Fallback boot loader". Test for that where the refusal
++                // actually happens.
++                if (MyStriCmp(Extension, L".efi") && DuplicatesFallback(Volume, FullName))
++                    FoundFallbackDuplicate = TRUE;
++                MyFreePool(Extension);
++                MyFreePool(FullName);
+                 continue;   // skip this
+           }
+ 
+@@ -1107,7 +1142,7 @@
+             FileName = StrDuplicate(L"EFI\\Microsoft\\Boot\\bkpbootmgfw.efi");
+             if (FileExists(Volume->RootDir, FileName) &&  !FilenameIn(Volume, L"EFI\\Microsoft\\Boot", L"bkpbootmgfw.efi",
+                 GlobalConfig.DontScanFiles)) {
+-                    AddLoaderEntry(FileName, L"Microsoft EFI boot (Boot Repair backup)", Volume, TRUE);
++                    AddLoaderEntry(FileName, L"Windows (Boot Repair backup)", Volume, TRUE);
+                     FoundBRBackup = TRUE;
+                     if (DuplicatesFallback(Volume, FileName))
+                         ScanFallbackLoader = FALSE;
+@@ -1119,7 +1154,7 @@
+                     if (FoundBRBackup)
+                         AddLoaderEntry(FileName, L"Supposed Microsoft EFI boot (probably GRUB)", Volume, TRUE);
+                     else
+-                        AddLoaderEntry(FileName, L"Microsoft EFI boot", Volume, TRUE);
++                        AddLoaderEntry(FileName, L"Windows", Volume, TRUE);
+                     if (DuplicatesFallback(Volume, FileName))
+                         ScanFallbackLoader = FALSE;
+             }
+@@ -1601,7 +1636,11 @@
+                 break;
+ 
+             case TAG_MOK_TOOL:
+-                FindTool(AllToolLocations, MOK_NAMES, L"MOK utility", BUILTIN_ICON_TOOL_MOK_TOOL);
++                // MokManager enrols keys into the database Shim consults, and Shim
++                // consults it only under Secure Boot. With Secure Boot off the tool
++                // can do nothing, so offering it is offering a dead end.
++                if (secure_mode())
++                    FindTool(AllToolLocations, MOK_NAMES, L"MOK utility", BUILTIN_ICON_TOOL_MOK_TOOL);
+                 break;
+ 
+             case TAG_FWUPDATE_TOOL:
+diff -ruN a/refind/screen.c b/refind/screen.c
+--- a/refind/screen.c	2024-03-23 23:21:19.000000000 +0100
++++ b/refind/screen.c	2026-08-30 18:44:25.311775259 +0200
+@@ -577,7 +577,7 @@
+      // blit to screen and clean up
+      if (CompImage != NULL) {
+          if (CompImage->HasAlpha)
+-             egDrawImageWithTransparency(CompImage, NULL, XPos, YPos, CompImage->Width, CompImage->Height);
++             egDrawImageWithTransparency(CompImage, NULL, XPos, YPos, CompImage->Width, CompImage->Height, NULL);
+          else
+              egDrawImage(CompImage, XPos, YPos);
+          egFreeImage(CompImage);
 I file binari a/refind/tools_x64/gptsync_x64.efi e b/refind/tools_x64/gptsync_x64.efi sono diversi

@@ -120,4 +120,13 @@ Five entries fit before rEFInd starts scrolling
 
 `big_icon_size` (549) and `small_icon_size` (48) in `refind.conf` decide the
 size of the frosted plate baked into every icon. If you change them, run
-`./build.py` so the icons and the selection highlight are redrawn to match.
+`./build.py` so the icons, the selection highlight and the glass stencil are
+redrawn to match.
+
+`frost_radius` (32) is how far the glass scatters what is behind it; 0 switches
+the effect off and the plates go back to plain translucency. `frost_mask_big`
+names the stencil that says where the glass is — `build.py` writes it as
+`frost_big.png` from the same `PLATE` geometry it draws the panels with, so the
+two cannot drift apart. Both tokens exist only in the patched binary that
+`./build-refind.sh` produces; a stock rEFInd ignores them and everything else
+still works.
