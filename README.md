@@ -93,11 +93,18 @@ one pixel outside it stays at 7.97, unchanged.
 there is nothing behind the pane to soften, so the frost has nothing to show;
 and a drop shadow cannot darken a background that is already almost black. Both
 of the obvious cues do nothing there. What does the work is light *on* the
-surface — a reflection lying diagonally across the pane, a hairline just inside
-the top edge where a bevel would catch it, and a crisp rim — none of which
-depend on what is behind at all. Turning those on and taking the pane's own body
-down from 36 to 24 is the difference between a pane and a rounded rectangle. The
-blur still matters, but only on a photograph with something in it to blur.
+surface — a hairline just inside the top edge where a bevel would catch it, and
+a rim that stays crisp instead of fading out — neither of which depends on what
+is behind at all. Those, with the pane's own body taken down from 36 to 24 so
+the edge has something to stand against, are the difference between a pane and a
+rounded rectangle. The blur still matters, but only on a photograph with
+something in it to blur.
+
+A reflection lying diagonally across the pane is the other classic cue, and it
+is in `build.py` as `SWEEP_A`, but it is off: it reads as a streak drawn on the
+glass more than as glass. The shadow is deliberately faint too — 58, not the 130
+it started at — because on a dark photograph it does nothing at all and on a
+light one anything stronger reads as a dark band rather than as depth.
 
 **The glass has to be weak to read as glass.** Blur and tint compound: a wide
 blur averages the whole panel to one colour and the tint then covers what little
