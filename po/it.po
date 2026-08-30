@@ -1,0 +1,75 @@
+# Italian translation for refind-background.
+# This file is distributed under the same licence as the refind-background package.
+msgid ""
+msgstr ""
+"Project-Id-Version: refind-background 1.0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"PO-Revision-Date: 2026-08-30 16:00+0200\n"
+"Last-Translator: IDanK0\n"
+"Language-Team: Italian\n"
+"Language: it\n"
+
+msgid "Boot Menu Background"
+msgstr "Sfondo del menu di avvio"
+
+msgid "pick one, or add a photo of your own"
+msgstr "scegline uno, o aggiungi una tua foto"
+
+msgid "Add a photo of your own"
+msgstr "Aggiungi una tua foto"
+
+msgid "Automatic dimming"
+msgstr "Scurimento automatico"
+
+msgid "Dim the photo just enough for the glass and the labels to read"
+msgstr "Attenua la foto quel tanto che basta perché il vetro e le scritte si leggano"
+
+msgid "Dim by"
+msgstr "Scurimento manuale"
+
+msgid "Preview"
+msgstr "Anteprima"
+
+msgid "Apply"
+msgstr "Applica"
+
+msgid "yours"
+msgstr "tua"
+
+msgid "auto {0}%"
+msgstr "auto {0}%"
+
+msgid "no dimming needed"
+msgstr "non serve scurirla"
+
+msgid "Choose a photo"
+msgstr "Scegli una foto"
+
+msgid "Images"
+msgstr "Immagini"
+
+msgid "Added: {0}"
+msgstr "Aggiunta: {0}"
+
+msgid "Rendering…  (about ten seconds)"
+msgstr "Genero l'anteprima…  (una decina di secondi)"
+
+msgid "Installing…  (you will be asked for your password)"
+msgstr "Installo…  (ti verrà chiesta la password)"
+
+msgid "Failed: {0}"
+msgstr "Errore: {0}"
+
+msgid "Preview opened — nothing was installed"
+msgstr "Anteprima aperta — non ho installato niente"
+
+msgid "Install failed: {0}"
+msgstr "Installazione non riuscita: {0}"
+
+msgid "cancelled"
+msgstr "annullata"
+
+msgid "Done — reboot to see the new background"
+msgstr "Fatto — riavvia per vedere il nuovo sfondo"

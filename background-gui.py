@@ -1,50 +1,60 @@
 #!/usr/bin/env python3
-"""Graphical picker for the boot menu background (GTK4 / libadwaita)."""
-import glob, json, os, shutil, subprocess, sys, tempfile, threading
+"""Graphical picker for the boot menu background (GTK4 / libadwaita).
+
+Interface strings go through gettext, so the window follows the system
+language. Translations live in po/ and are compiled into locale/.
+"""
+import gettext, glob, json, os, shutil, subprocess, sys, tempfile, threading
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, GLib, Gdk, Gio
+from gi.repository import Gtk, Adw, GLib, Gio
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-LIB  = os.path.join(HERE, "library")
-CACHE = os.path.join(GLib.get_user_cache_dir(), "refind-background")
+HERE   = os.path.dirname(os.path.abspath(__file__))
+LIB    = os.path.join(HERE, "library")
+CACHE  = os.path.join(GLib.get_user_cache_dir(), "refind-background")
+DOMAIN = "refind-background"
+APP_ID = "io.github.idank0.RefindBackground"
+
+_ = gettext.translation(DOMAIN, os.path.join(HERE, "locale"), fallback=True).gettext
+
 sys.path.insert(0, HERE)
 import build as B
 
-APP_ID = "io.github.idank0.RefindBackground"
 
-
-def catalogo():
+def catalogue():
+    """Library entries first, then anything dropped in library/custom/."""
     cfg = json.load(open(os.path.join(LIB, "library.json")))
-    voci = [{**s, "path": os.path.join(HERE, s["file"]), "custom": False} for s in cfg["sfondi"]]
+    entries = [{**b, "path": os.path.join(HERE, b["file"]), "custom": False}
+               for b in cfg["backgrounds"]]
     for p in sorted(glob.glob(os.path.join(LIB, "custom", "*"))):
         if p.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp")):
-            voci.append({"slug": os.path.splitext(os.path.basename(p))[0],
-                         "nome": os.path.basename(p), "path": p, "custom": True,
-                         "licenza": "tua", "luminosita": None, "darken_consigliato": None})
-    return cfg, voci
+            entries.append({"slug": os.path.splitext(os.path.basename(p))[0],
+                            "name": os.path.basename(p), "path": p, "custom": True,
+                            "licence": _("yours"), "luminance": None,
+                            "suggested_darken": None})
+    return cfg, entries
 
 
-def miniature(voci):
-    """Library thumbnails are sliced out of the contact sheet, so they already
-    show the theme. Custom photos get a plain crop — fast, and the Preview
-    button renders the real thing anyway."""
+def thumbnails(entries):
+    """Library thumbnails are sliced out of the contact sheet, so the grid
+    already shows the theme and appears instantly. Custom photos get a plain
+    crop; the Preview button renders the real thing anyway."""
     os.makedirs(CACHE, exist_ok=True)
     from PIL import Image
     sheet_path = os.path.join(LIB, "preview-sheet.jpg")
     sheet = Image.open(sheet_path) if os.path.exists(sheet_path) else None
-    n_lib = sum(1 for v in voci if not v["custom"])
-    for i, v in enumerate(voci):
-        dst = os.path.join(CACHE, f"{v['slug']}.png")
-        v["thumb"] = dst
-        if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(v["path"]):
+    n_lib = sum(1 for e in entries if not e["custom"])
+    for i, e in enumerate(entries):
+        dst = os.path.join(CACHE, f"{e['slug']}.png")
+        e["thumb"] = dst
+        if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(e["path"]):
             continue
-        if not v["custom"] and sheet is not None and i < n_lib:
+        if not e["custom"] and sheet is not None and i < n_lib:
             x, y = (i % 2) * 960, (i // 2) * 602 + 62
             sheet.crop((x, y, x + 960, y + 540)).resize((384, 216), Image.LANCZOS).save(dst)
         else:
-            im = Image.open(v["path"]).convert("RGB"); w, h = im.size
+            im = Image.open(e["path"]).convert("RGB"); w, h = im.size
             if w / h > 16 / 9:
                 nw = int(h * 16 / 9); im = im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
             else:
@@ -52,13 +62,13 @@ def miniature(voci):
             im.resize((384, 216), Image.LANCZOS).save(dst)
 
 
-class Finestra(Adw.ApplicationWindow):
+class Window(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Sfondo del menu di avvio",
+        super().__init__(application=app, title=_("Boot Menu Background"),
                          default_width=1020, default_height=760)
-        self.cfg, self.voci = catalogo()
-        self.selezione = 0
-        self.lavoro = False
+        self.cfg, self.entries = catalogue()
+        self.selected = 0
+        self.busy = False
 
         self.toasts = Adw.ToastOverlay()
         self.set_content(self.toasts)
@@ -66,175 +76,189 @@ class Finestra(Adw.ApplicationWindow):
         self.toasts.set_child(root)
 
         hb = Adw.HeaderBar()
-        titolo = Adw.WindowTitle(title="Sfondo del menu di avvio",
-                                 subtitle="scegline uno, o aggiungi una tua foto")
-        hb.set_title_widget(titolo)
-        piu = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="Aggiungi una tua foto")
-        piu.connect("clicked", self.aggiungi)
-        hb.pack_start(piu)
+        hb.set_title_widget(Adw.WindowTitle(
+            title=_("Boot Menu Background"),
+            subtitle=_("pick one, or add a photo of your own")))
+        add = Gtk.Button(icon_name="list-add-symbolic",
+                         tooltip_text=_("Add a photo of your own"))
+        add.connect("clicked", self.on_add)
+        hb.pack_start(add)
         root.append(hb)
 
         sw = Gtk.ScrolledWindow(vexpand=True)
         self.flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.SINGLE,
                                 homogeneous=True, column_spacing=14, row_spacing=14,
                                 max_children_per_line=3, min_children_per_line=2,
-                                margin_top=18, margin_bottom=18, margin_start=18, margin_end=18)
-        self.flow.connect("selected-children-changed", self.cambio_selezione)
+                                margin_top=18, margin_bottom=18,
+                                margin_start=18, margin_end=18)
+        self.flow.connect("selected-children-changed", self.on_select)
         sw.set_child(self.flow)
         root.append(sw)
-        self.popola()
+        self.fill()
 
-        # ---- barra inferiore
         bar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
                       margin_top=6, margin_bottom=16, margin_start=18, margin_end=18)
-        gruppo = Adw.PreferencesGroup()
-        riga = Adw.ActionRow(title="Scurimento automatico",
-                             subtitle="Attenua la foto quel tanto che basta perché il vetro e le scritte si leggano")
-        self.auto = Gtk.Switch(active=str(self.cfg.get("darken_predefinito")) == "auto",
+        group = Adw.PreferencesGroup()
+        row = Adw.ActionRow(
+            title=_("Automatic dimming"),
+            subtitle=_("Dim the photo just enough for the glass and the labels to read"))
+        self.auto = Gtk.Switch(active=str(self.cfg.get("default_darken")) == "auto",
                                valign=Gtk.Align.CENTER)
-        self.auto.connect("state-set", lambda *_: (self.aggiorna_slider(), False)[1])
-        riga.add_suffix(self.auto); riga.set_activatable_widget(self.auto)
-        gruppo.add(riga)
+        self.auto.connect("state-set", lambda *_a: (self.sync_slider(), False)[1])
+        row.add_suffix(self.auto); row.set_activatable_widget(self.auto)
+        group.add(row)
 
-        self.riga_man = Adw.ActionRow(title="Scurimento manuale")
-        self.scala = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        self.scala.set_size_request(320, -1); self.scala.set_draw_value(True)
-        self.scala.set_value_pos(Gtk.PositionType.RIGHT)
-        d = self.cfg.get("darken_predefinito")
-        self.scala.set_value(0 if str(d) == "auto" else int(d))
-        self.riga_man.add_suffix(self.scala)
-        gruppo.add(self.riga_man)
-        bar.append(gruppo)
+        self.manual_row = Adw.ActionRow(title=_("Dim by"))
+        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.scale.set_size_request(320, -1)
+        self.scale.set_draw_value(True)
+        self.scale.set_value_pos(Gtk.PositionType.RIGHT)
+        d = self.cfg.get("default_darken")
+        self.scale.set_value(0 if str(d) == "auto" else int(d))
+        self.manual_row.add_suffix(self.scale)
+        group.add(self.manual_row)
+        bar.append(group)
 
-        azioni = Gtk.Box(spacing=10, halign=Gtk.Align.END)
-        self.b_prev = Gtk.Button(label="Anteprima")
-        self.b_prev.connect("clicked", lambda *_: self.esegui(False))
-        self.b_app = Gtk.Button(label="Applica")
-        self.b_app.add_css_class("suggested-action")
-        self.b_app.connect("clicked", lambda *_: self.esegui(True))
+        actions = Gtk.Box(spacing=10, halign=Gtk.Align.END)
+        self.b_prev = Gtk.Button(label=_("Preview"))
+        self.b_prev.connect("clicked", lambda *_a: self.run(False))
+        self.b_apply = Gtk.Button(label=_("Apply"))
+        self.b_apply.add_css_class("suggested-action")
+        self.b_apply.connect("clicked", lambda *_a: self.run(True))
         self.spinner = Gtk.Spinner()
-        self.stato = Gtk.Label(label="", xalign=0)
-        azioni.append(self.stato); azioni.append(self.spinner)
-        azioni.append(self.b_prev); azioni.append(self.b_app)
-        bar.append(azioni)
+        self.status = Gtk.Label(label="", xalign=0)
+        for w in (self.status, self.spinner, self.b_prev, self.b_apply):
+            actions.append(w)
+        bar.append(actions)
         root.append(bar)
-        self.aggiorna_slider()
+        self.sync_slider()
 
-    # ------------------------------------------------------------------ ui
-    def popola(self):
-        miniature(self.voci)
+    # ---------------------------------------------------------------- view
+    def fill(self):
+        thumbnails(self.entries)
         while (c := self.flow.get_first_child()):
             self.flow.remove(c)
-        for v in self.voci:
+        for e in self.entries:
             card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             card.add_css_class("card"); card.set_size_request(300, -1)
-            pic = Gtk.Picture.new_for_filename(v["thumb"])
+            pic = Gtk.Picture.new_for_filename(e["thumb"])
             pic.set_content_fit(Gtk.ContentFit.COVER)
             pic.set_size_request(-1, 168)
             card.append(pic)
-            nome = Gtk.Label(label=v["nome"], xalign=0.5, ellipsize=3)
-            nome.add_css_class("heading")
-            nome.set_margin_start(8); nome.set_margin_end(8)
-            card.append(nome)
-            det = v["licenza"]
-            if v.get("darken_consigliato") is not None:
-                det += "  ·  auto " + (f"{v['darken_consigliato']}%" if v['darken_consigliato'] else "non serve")
-            sub = Gtk.Label(label=det, xalign=0.5, ellipsize=3)
+            name = Gtk.Label(label=e["name"], xalign=0.5, ellipsize=3)
+            name.add_css_class("heading")
+            name.set_margin_start(8); name.set_margin_end(8)
+            card.append(name)
+            detail = e["licence"]
+            if e.get("suggested_darken") is not None:
+                detail += "  ·  " + (_("auto {0}%").format(e["suggested_darken"])
+                                     if e["suggested_darken"] else _("no dimming needed"))
+            sub = Gtk.Label(label=detail, xalign=0.5, ellipsize=3)
             sub.add_css_class("dim-label"); sub.add_css_class("caption")
             sub.set_margin_bottom(10); sub.set_margin_start(8); sub.set_margin_end(8)
             card.append(sub)
             self.flow.append(card)
-        GLib.idle_add(lambda: self.flow.select_child(self.flow.get_child_at_index(self.selezione)))
+        GLib.idle_add(lambda: self.flow.select_child(self.flow.get_child_at_index(self.selected)))
 
-    def aggiorna_slider(self):
-        self.riga_man.set_sensitive(not self.auto.get_active())
+    def sync_slider(self):
+        self.manual_row.set_sensitive(not self.auto.get_active())
 
-    def cambio_selezione(self, *_):
+    def on_select(self, *_a):
         sel = self.flow.get_selected_children()
         if sel:
-            self.selezione = sel[0].get_index()
+            self.selected = sel[0].get_index()
 
-    def toast(self, testo, secondi=4):
-        t = Adw.Toast(title=testo); t.set_timeout(secondi); self.toasts.add_toast(t)
+    def toast(self, text, seconds=4):
+        t = Adw.Toast(title=text); t.set_timeout(seconds); self.toasts.add_toast(t)
 
-    # -------------------------------------------------------------- azioni
-    def aggiungi(self, *_):
-        dlg = Gtk.FileDialog(title="Scegli una foto")
-        f = Gtk.FileFilter(); f.set_name("Immagini")
-        for p in ("*.jpg", "*.jpeg", "*.png", "*.webp", "*.bmp"): f.add_pattern(p)
-        store = Gio.ListStore.new(Gtk.FileFilter); store.append(f)
+    # -------------------------------------------------------------- actions
+    def on_add(self, *_a):
+        dlg = Gtk.FileDialog(title=_("Choose a photo"))
+        filt = Gtk.FileFilter(); filt.set_name(_("Images"))
+        for p in ("*.jpg", "*.jpeg", "*.png", "*.webp", "*.bmp"):
+            filt.add_pattern(p)
+        store = Gio.ListStore.new(Gtk.FileFilter); store.append(filt)
         dlg.set_filters(store)
-        def fatto(d, res):
-            try: gf = d.open_finish(res)
-            except GLib.Error: return
+
+        def done(d, res):
+            try:
+                gf = d.open_finish(res)
+            except GLib.Error:
+                return
             src = gf.get_path()
             os.makedirs(os.path.join(LIB, "custom"), exist_ok=True)
-            dst = os.path.join(LIB, "custom", os.path.basename(src))
-            shutil.copy(src, dst)
-            self.cfg, self.voci = catalogo()
-            self.selezione = len(self.voci) - 1
-            self.popola()
-            self.toast(f"Aggiunta: {os.path.basename(src)}")
-        dlg.open(self, None, fatto)
+            shutil.copy(src, os.path.join(LIB, "custom", os.path.basename(src)))
+            self.cfg, self.entries = catalogue()
+            self.selected = len(self.entries) - 1
+            self.fill()
+            self.toast(_("Added: {0}").format(os.path.basename(src)))
+        dlg.open(self, None, done)
 
-    def esegui(self, installa):
-        if self.lavoro: return
-        v = self.voci[self.selezione]
-        darken = "auto" if self.auto.get_active() else int(self.scala.get_value())
-        self.lavoro = True
-        self.b_prev.set_sensitive(False); self.b_app.set_sensitive(False)
+    def run(self, install):
+        if self.busy:
+            return
+        entry = self.entries[self.selected]
+        darken = "auto" if self.auto.get_active() else int(self.scale.get_value())
+        self.busy = True
+        self.b_prev.set_sensitive(False); self.b_apply.set_sensitive(False)
         self.spinner.start()
-        self.stato.set_text("Genero l'anteprima…  (una decina di secondi)")
+        self.status.set_text(_("Rendering…  (about ten seconds)"))
 
-        def lavoro():
+        def work():
             try:
                 tmp = tempfile.mkdtemp(prefix="refind-bg-")
-                prev = os.path.join(tmp, "preview.png")
-                B.build(v["path"], darken, tmp, prev, quiet=True)
-                GLib.idle_add(self.dopo_build, tmp, prev, installa, None)
-            except Exception as e:
-                GLib.idle_add(self.dopo_build, None, None, installa, str(e))
-        threading.Thread(target=lavoro, daemon=True).start()
+                preview = os.path.join(tmp, "preview.png")
+                B.build(entry["path"], darken, tmp, preview, quiet=True)
+                GLib.idle_add(self.built, tmp, preview, install, None)
+            except Exception as exc:
+                GLib.idle_add(self.built, None, None, install, str(exc))
+        threading.Thread(target=work, daemon=True).start()
 
-    def dopo_build(self, tmp, prev, installa, errore):
-        if errore:
-            self.fine(); self.toast(f"Errore: {errore}", 8); return
-        if not installa:
-            self.fine(); self.mostra(prev)
-            self.toast("Anteprima aperta — non ho installato niente"); return
-        self.stato.set_text("Installo…  (ti verrà chiesta la password)")
-        def lavoro():
+    def built(self, tmp, preview, install, error):
+        if error:
+            self.idle(); self.toast(_("Failed: {0}").format(error), 8); return
+        if not install:
+            self.idle(); self.show_image(preview)
+            self.toast(_("Preview opened — nothing was installed")); return
+        self.status.set_text(_("Installing…  (you will be asked for your password)"))
+
+        def work():
             try:
                 r = subprocess.run(["pkexec", os.path.join(HERE, "install-assets.sh"), tmp],
                                    capture_output=True, text=True)
-                GLib.idle_add(self.dopo_install, tmp, r.returncode, r.stderr.strip())
-            except Exception as e:
-                GLib.idle_add(self.dopo_install, tmp, 1, str(e))
-        threading.Thread(target=lavoro, daemon=True).start()
+                GLib.idle_add(self.installed, tmp, r.returncode, r.stderr.strip())
+            except Exception as exc:
+                GLib.idle_add(self.installed, tmp, 1, str(exc))
+        threading.Thread(target=work, daemon=True).start()
 
-    def dopo_install(self, tmp, rc, err):
-        self.fine()
+    def installed(self, tmp, rc, err):
+        self.idle()
         if rc != 0:
-            self.toast(f"Installazione non riuscita: {err or 'annullata'}", 8); return
+            self.toast(_("Install failed: {0}").format(err or _("cancelled")), 8); return
         for p in glob.glob(f"{tmp}/*.png") + glob.glob(f"{tmp}/icons/*.png"):
             dst = os.path.join(HERE, "assets", os.path.relpath(p, tmp))
-            os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copy(p, dst)
-        self.toast("Fatto — riavvia per vedere il nuovo sfondo", 6)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy(p, dst)
+        self.toast(_("Done — reboot to see the new background"), 6)
 
-    def fine(self):
-        self.lavoro = False; self.spinner.stop(); self.stato.set_text("")
-        self.b_prev.set_sensitive(True); self.b_app.set_sensitive(True)
+    def idle(self):
+        self.busy = False
+        self.spinner.stop()
+        self.status.set_text("")
+        self.b_prev.set_sensitive(True); self.b_apply.set_sensitive(True)
 
-    def mostra(self, path):
-        finale = os.path.join(CACHE, "preview.png"); shutil.copy(path, finale)
-        Gio.AppInfo.launch_default_for_uri(f"file://{finale}", None)
+    def show_image(self, path):
+        final = os.path.join(CACHE, "preview.png")
+        shutil.copy(path, final)
+        Gio.AppInfo.launch_default_for_uri(f"file://{final}", None)
 
 
 class App(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID)
+
     def do_activate(self):
-        (self.props.active_window or Finestra(self)).present()
+        (self.props.active_window or Window(self)).present()
 
 
 if __name__ == "__main__":

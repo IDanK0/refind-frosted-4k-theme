@@ -219,7 +219,7 @@ if __name__ == "__main__":
         cfg = json.load(open(lib))
     ap = argparse.ArgumentParser(description="Build the rEFInd theme assets.")
     ap.add_argument("--background", default=None, help="photo to use (default: library default)")
-    ap.add_argument("--darken", default=str(cfg.get("darken_predefinito", 24)),
+    ap.add_argument("--darken", default=str(cfg.get("default_darken", 24)),
                     help="0 = untouched, 100 = black, or 'auto' (default: %(default)s)")
     ap.add_argument("--out", default=os.path.join(HERE, "assets"))
     ap.add_argument("--preview", default=None, help="also write a full-screen preview here")
@@ -227,6 +227,6 @@ if __name__ == "__main__":
     if str(a.darken).lower() != "auto" and not (a.darken.isdigit() and 0 <= int(a.darken) <= 100):
         sys.exit("--darken must be 0-100 or 'auto'")
     bg = a.background or os.path.join(HERE, "library",
-         next(s["file"] for s in cfg["sfondi"] if s["slug"] == cfg["predefinito"]).split("/")[-1])
+         next(s["file"] for s in cfg["backgrounds"] if s["slug"] == cfg["default"]).split("/")[-1])
     print(f"  background {bg}")
     build(bg, a.darken, a.out, a.preview)
