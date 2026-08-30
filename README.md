@@ -148,10 +148,16 @@ x += math.cos(a) * w
 y += math.sin(a) * w
 ```
 
-weighted by how colourful and how bright each pixel is, which lets a small
-bright sky decide the answer over a large dark dune — which is what the eye does
-too. On the default photograph that comes out at hue 341° with 33% saturation,
-and every colour in the theme is then a saturation and a lightness away from it.
+weighted by how colourful and how bright each pixel is. Brightness has to count
+for a great deal — `v` **cubed**, not `v`. With `v` alone a vast dark dune drags
+the circular mean away from the small bright sky the eye actually reads the
+picture by: the default photograph came out at hue 341°, a pink, when its sky is
+at 13° and the picture is plainly warm. Cubed, it lands on 17°.
+
+Every colour in the theme is then a saturation and a lightness away from that
+hue, and the saturations are deliberately small: around 0.09, which reads as
+warmth rather than as a colour. The aim is a warm grey that belongs to the
+photograph, not a coloured theme.
 
 A logo is not washed over with that colour, which would flatten it. Its own
 lightness picks a point on a ramp between a dark and a light version of the hue,
@@ -169,17 +175,14 @@ the middle instead:
 sat = peak * (1 - abs(2 * t - 1) ** bulge)
 ```
 
-which puts the same blue at 0.40 without touching its lightness, so the shape and
-its contrast are untouched and only the colour comes back.
+which keeps the hue at the logo's own lightness instead of losing it there. It
+is what stops a near-neutral palette going flat: the tint is small everywhere,
+but it does not disappear in the one place the eye is looking.
 
-The other half of looking faded is lightness: everything was drawn at 0.90, and
-a colour at 90% lightness and 15% saturation is a pastel by definition. Those
-came down too.
-
-How far to push it is not a matter of taste alone: scaling saturation purely in
-proportion to the photograph's leaves a muted picture with a theme
-indistinguishable from grey, which is not what asking for the picture's colour
-means, so each part of the theme has a floor as well as a ceiling. The values in
+Each part has a floor as well as a ceiling, because scaling saturation purely in
+proportion to the photograph's leaves a muted picture indistinguishable from
+grey, and a vivid one shouting. A photograph at 68% saturation gives a logo at
+0.17 and a border at 0.14 — still a tint, not a colour scheme. The values in
 `TONE` were chosen by rendering the menu at three strengths and looking. Weaker,
 and the panel's border is indistinguishable from white — which is what gives the
 game away, since the border and the raking veil are the parts of the glass you
