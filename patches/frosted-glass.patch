@@ -1,0 +1,218 @@
+diff -ruN a/EfiLib/gnuefi-helper.c b/EfiLib/gnuefi-helper.c
+--- a/EfiLib/gnuefi-helper.c	2026-08-30 18:18:51.640710086 +0200
++++ b/EfiLib/gnuefi-helper.c	2026-08-30 18:13:44.943692147 +0200
+@@ -109,6 +109,7 @@
+   @return The length of String.
+ 
+ **/
++#if 0   /* duplicate symbol against gnu-efi >= 3.0.19 */
+ UINTN
+ AsciiStrLen (
+   IN      CONST CHAR8               *String
+@@ -129,6 +130,7 @@
+   }
+   return Length;
+ }
++#endif  /* newer gnu-efi provides AsciiStrLen itself */
+ 
+ /**
+   Determine whether a given device path is valid.
+diff -ruN a/libeg/image.c b/libeg/image.c
+--- a/libeg/image.c	2026-08-30 18:18:51.640868375 +0200
++++ b/libeg/image.c	2026-08-30 18:16:46.097237934 +0200
+@@ -632,6 +632,112 @@
+     }
+ }
+ 
++
++//
++// Frosted glass.
++//
++// A translucent panel painted into an icon cannot blur what is behind it: the
++// icon is generated long before anyone knows where rEFInd will draw it. But by
++// the time an entry is painted the background has already been cropped to the
++// exact tile, so the blur can be done here, at draw time, and is therefore
++// correct for any number of entries and any position.
++//
++// The mask is the icon itself. Its alpha says where the glass is, so the blur
++// is applied in proportion to it: opaque logo and empty margin are left sharp,
++// the translucent plate is frosted.
++//
++static VOID egBoxBlurPass(EG_PIXEL *Src, EG_PIXEL *Dst, UINTN W, UINTN Hgt, UINTN Radius) {
++    UINTN x, y, i, Span, Count;
++    UINTN Sb, Sg, Sr;
++    EG_PIXEL *Row;
++
++    Span = Radius * 2 + 1;
++    for (y = 0; y < Hgt; y++) {
++        Row = Src + y * W;
++        Sb = Sg = Sr = 0;
++        Count = 0;
++        for (i = 0; i <= Radius && i < W; i++) {
++            Sb += Row[i].b; Sg += Row[i].g; Sr += Row[i].r; Count++;
++        }
++        for (x = 0; x < W; x++) {
++            Dst[y * W + x].b = (UINT8)(Sb / Count);
++            Dst[y * W + x].g = (UINT8)(Sg / Count);
++            Dst[y * W + x].r = (UINT8)(Sr / Count);
++            Dst[y * W + x].a = Row[x].a;
++            if (x >= Radius) {
++                Sb -= Row[x - Radius].b; Sg -= Row[x - Radius].g; Sr -= Row[x - Radius].r;
++                Count--;
++            }
++            if (x + Radius + 1 < W) {
++                Sb += Row[x + Radius + 1].b; Sg += Row[x + Radius + 1].g;
++                Sr += Row[x + Radius + 1].r; Count++;
++            }
++        }
++    }
++    (VOID) Span;
++}
++
++static VOID egTranspose(EG_PIXEL *Src, EG_PIXEL *Dst, UINTN W, UINTN Hgt) {
++    UINTN x, y;
++    for (y = 0; y < Hgt; y++)
++        for (x = 0; x < W; x++)
++            Dst[x * Hgt + y] = Src[y * W + x];
++}
++
++VOID egFrostImage(IN OUT EG_IMAGE *Image, IN EG_IMAGE *Mask, IN UINTN Radius) {
++    UINTN     W, Hgt, x, y, i, Total, Alpha, RevAlpha, Temp;
++    INTN      MaskX, MaskY, mx, my;
++    EG_PIXEL  *A, *B, *Blurred;
++
++    if (!Image || !Mask || Radius == 0 || !Mask->HasAlpha)
++        return;
++    W = Image->Width; Hgt = Image->Height;
++    Total = W * Hgt;
++    if (Total == 0 || Radius >= W || Radius >= Hgt)
++        return;
++
++    A = (EG_PIXEL *) AllocatePool(Total * sizeof(EG_PIXEL));
++    B = (EG_PIXEL *) AllocatePool(Total * sizeof(EG_PIXEL));
++    if (!A || !B) { MyFreePool(&A); MyFreePool(&B); return; }
++
++    // two box passes per axis approximate a Gaussian closely enough
++    egBoxBlurPass(Image->PixelData, A, W, Hgt, Radius);
++    egBoxBlurPass(A, B, W, Hgt, Radius);
++    egTranspose(B, A, W, Hgt);
++    egBoxBlurPass(A, B, Hgt, W, Radius);
++    egBoxBlurPass(B, A, Hgt, W, Radius);
++    egTranspose(A, B, Hgt, W);
++    Blurred = B;
++
++    // the icon is centred in the tile, exactly as BltImageCompositeBadge does
++    MaskX = ((INTN) W  - (INTN) Mask->Width)  / 2;
++    MaskY = ((INTN) Hgt - (INTN) Mask->Height) / 2;
++
++    for (y = 0; y < Hgt; y++) {
++        my = (INTN) y - MaskY;
++        if (my < 0 || my >= (INTN) Mask->Height)
++            continue;
++        for (x = 0; x < W; x++) {
++            mx = (INTN) x - MaskX;
++            if (mx < 0 || mx >= (INTN) Mask->Width)
++                continue;
++            Alpha = Mask->PixelData[my * Mask->Width + mx].a;
++            if (Alpha == 0)
++                continue;
++            i = y * W + x;
++            RevAlpha = 255 - Alpha;
++            Temp = (UINTN) Image->PixelData[i].b * RevAlpha + (UINTN) Blurred[i].b * Alpha + 0x80;
++            Image->PixelData[i].b = (UINT8) ((Temp + (Temp >> 8)) >> 8);
++            Temp = (UINTN) Image->PixelData[i].g * RevAlpha + (UINTN) Blurred[i].g * Alpha + 0x80;
++            Image->PixelData[i].g = (UINT8) ((Temp + (Temp >> 8)) >> 8);
++            Temp = (UINTN) Image->PixelData[i].r * RevAlpha + (UINTN) Blurred[i].r * Alpha + 0x80;
++            Image->PixelData[i].r = (UINT8) ((Temp + (Temp >> 8)) >> 8);
++        }
++    }
++    MyFreePool(&A);
++    MyFreePool(&B);
++} // VOID egFrostImage()
++
+ VOID egRawCompose(IN OUT EG_PIXEL *CompBasePtr, IN EG_PIXEL *TopBasePtr,
+                   IN UINTN Width, IN UINTN Height,
+                   IN UINTN CompLineOffset, IN UINTN TopLineOffset)
+diff -ruN a/libeg/libeg.h b/libeg/libeg.h
+--- a/libeg/libeg.h	2026-08-30 18:18:51.640956762 +0200
++++ b/libeg/libeg.h	2026-08-30 18:16:46.097311082 +0200
+@@ -127,6 +127,7 @@
+                      IN UINTN AreaWidth, IN UINTN AreaHeight,
+                      IN EG_PIXEL *Color);
+ VOID egComposeImage(IN OUT EG_IMAGE *CompImage, IN EG_IMAGE *TopImage, IN UINTN PosX, IN UINTN PosY);
++VOID egFrostImage(IN OUT EG_IMAGE *Image, IN EG_IMAGE *Mask, IN UINTN Radius);
+ 
+ UINTN egGetFontHeight(VOID);
+ UINTN egGetFontCellWidth(VOID);
+diff -ruN a/libeg/screen.c b/libeg/screen.c
+--- a/libeg/screen.c	2026-08-30 18:18:51.640841334 +0200
++++ b/libeg/screen.c	2026-08-30 18:17:11.921633375 +0200
+@@ -524,6 +524,7 @@
+ 
+     Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos, Width, Height);
+     if (Background != NULL) {
++        egFrostImage(Background, Image, GlobalConfig.FrostRadius);
+         BltImageCompositeBadge(Background, Image, BadgeImage, XPos, YPos);
+         egFreeImage(Background);
+     }
+diff -ruN a/Make.common b/Make.common
+--- a/Make.common	2026-08-30 18:18:51.640506281 +0200
++++ b/Make.common	2026-08-30 18:14:51.605763246 +0200
+@@ -83,7 +83,7 @@
+ CFLAGS          = $(OPTIMFLAGS) -fno-stack-protector -fshort-wchar -Wall
+ 
+ # ...for GNU-EFI....
+-GNUEFI_CFLAGS   = -fpic -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol -I../include -I../refind -I../libeg -I../mok -I../gzip
++GNUEFI_CFLAGS   = -DGNU_EFI_USE_REALLOCATEPOOL_ABI=0 -fpic -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol -I../include -I../refind -I../libeg -I../mok -I../gzip
+ 
+ # ...and for TianoCore....
+ TIANO_INCLUDE_DIRS = -I $(TIANOBASE)/MdePkg \
+@@ -121,7 +121,7 @@
+ # objcopy flags for GNU-EFI
+ #
+ 
+-FORMAT          = --target=efi-app-$(ARCH)
++FORMAT          = -O pei-x86-64 --subsystem=10
+ FORMAT_DRIVER   = --target=efi-bsdrv-$(ARCH)
+ 
+ #
+diff -ruN a/refind/config.c b/refind/config.c
+--- a/refind/config.c	2026-08-30 18:18:51.639903512 +0200
++++ b/refind/config.c	2026-08-30 18:17:11.921520562 +0200
+@@ -800,6 +800,11 @@
+                 }
+             } // for (graphics_on tokens)
+ 
++        } else if (MyStriCmp(TokenList[0], L"frost_radius")) {
++            HandleInt(TokenList, TokenCount, &(GlobalConfig.FrostRadius));
++            if (GlobalConfig.FrostRadius > 200)
++                GlobalConfig.FrostRadius = 200;
++
+         } else if (MyStriCmp(TokenList[0], L"font") && (TokenCount == 2)) {
+             egLoadFont(TokenList[1]);
+ 
+diff -ruN a/refind/global.h b/refind/global.h
+--- a/refind/global.h	2026-08-30 18:18:51.640026705 +0200
++++ b/refind/global.h	2026-08-30 18:17:11.921396047 +0200
+@@ -393,6 +393,9 @@
+    UINT32_LIST      *CsrValues;
+    UINTN            ShowTools[NUM_TOOLS];
+    CHAR8            ScanFor[NUM_SCAN_OPTIONS]; // codes of types of loaders for which to scan
++   // Radius, in pixels, of the frosted-glass blur applied to the background
++   // under the translucent parts of an icon. 0 disables it.
++   UINTN            FrostRadius;
+ } REFIT_CONFIG;
+ 
+ // Global variables
+diff -ruN a/refind/menu.c b/refind/menu.c
+--- a/refind/menu.c	2026-08-30 18:18:51.639960129 +0200
++++ b/refind/menu.c	2026-08-30 18:17:11.921589222 +0200
+@@ -1083,6 +1083,7 @@
+         Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos,
+                                  SelectionImages[Entry->Row]->Width, SelectionImages[Entry->Row]->Height);
+         if (Background) {
++            egFrostImage(Background, Entry->Image, GlobalConfig.FrostRadius);
+             egComposeImage(Background, SelectionImages[Entry->Row], 0, 0);
+             BltImageCompositeBadge(Background, Entry->Image, Entry->BadgeImage, XPos, YPos);
+             egFreeImage(Background);
+I file binari a/refind/tools_x64/gptsync_x64.efi e b/refind/tools_x64/gptsync_x64.efi sono diversi

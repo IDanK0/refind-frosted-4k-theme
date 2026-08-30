@@ -16,7 +16,7 @@ for five, and for whatever a USB stick adds tomorrow.
     ./build.py --background ~/mine.png --darken auto
 """
 import argparse, glob, json, math, os, sys
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageFilter, ImageEnhance, ImageStat
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -44,6 +44,8 @@ FONT_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 BOX = (1299, 850, 2541, 1400)     # strip sampled to judge how bright a photo is
 TARGET_LUM = 30.0                 # what --darken auto aims for
+TARGET_DETAIL = 0.60              # what --blur auto aims for
+BLUR_STEPS = (0, 4, 8, 12, 16, 20, 26, 34, 44)
 
 # rEFInd matches an icon by OS name; give each one a readable label so a
 # system detected next year arrives already named.
@@ -119,21 +121,21 @@ TOOLS = [(t_about, "func_about.png"), (t_hidden, "func_hidden.png"),
 def plate(s):
     """A frosted panel that does not know what is behind it.
 
-    The previous version blurred the actual background, which looked better but
-    only worked because the tiles never moved. This one lets the background
-    through, lightened and veiled, so it is correct wherever rEFInd puts it."""
+    It cannot blur what is behind it, since it does not know where it will be
+    drawn. That is why the photograph itself is softened instead — see detail()
+    — leaving this a plain translucent panel with no compensation of any kind."""
     p = Image.new("RGBA", (s * SS, s * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(p); r = int(s * SS * .19)
-    d.rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=(222, 232, 252, 104))
+    d.rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=(214, 226, 248, 64))
     g = Image.new("L", (1, s * SS))
-    g.putdata([int(78 * (1 - i / (s * SS))) for i in range(s * SS)])   # raking light
+    g.putdata([int(46 * (1 - i / (s * SS))) for i in range(s * SS)])   # raking light
     veil = Image.new("RGBA", (s*SS, s*SS), (255, 255, 255, 255))
     veil.putalpha(g.resize((s*SS, s*SS)))
     m = Image.new("L", (s*SS, s*SS), 0)
     ImageDraw.Draw(m).rounded_rectangle([0, 0, s*SS-1, s*SS-1], radius=r, fill=255)
     p.alpha_composite(Image.composite(veil, Image.new("RGBA", (s*SS, s*SS), (0,0,0,0)), m))
     ImageDraw.Draw(p).rounded_rectangle([3, 3, s*SS-4, s*SS-4], radius=r,
-                                        outline=(255, 255, 255, 170), width=5 * SS)
+                                        outline=(255, 255, 255, 150), width=5 * SS)
     p = p.resize((s, s), Image.LANCZOS)
     a = p.split()[3]
     f = Image.new("L", (1, s)); f.putdata([int(255 * (1 - .28 * i / s)) for i in range(s)])
@@ -171,8 +173,26 @@ def fit(path):
 def luminance(im):
     return ImageStat.Stat(im.crop(BOX).convert("L")).mean[0]
 
+def detail(im):
+    """High-frequency energy in the strip the plates sit on: how much drawing
+    would still be legible through the glass.
+
+    This is what decides --blur auto. The plate cannot blur what is behind it —
+    it does not know where rEFInd will draw it — and raising its opacity only
+    fades detail rather than removing it. Softening the whole photograph is the
+    one treatment that is correct at every position, so it is applied only as
+    much as the photograph actually needs."""
+    z = im.crop(BOX).convert("L")
+    return ImageStat.Stat(ImageChops.difference(z, z.filter(ImageFilter.GaussianBlur(6)))).mean[0]
+
+def auto_blur(im):
+    for r in BLUR_STEPS:
+        if detail(im if r == 0 else im.filter(ImageFilter.GaussianBlur(r))) <= TARGET_DETAIL:
+            return r
+    return BLUR_STEPS[-1]
+
 # --------------------------------------------------------------------- main
-def build(background, darken, out, preview_path=None, quiet=False):
+def build(background, darken, out, preview_path=None, quiet=False, blur="auto"):
     say = (lambda *a: None) if quiet else print
     os.makedirs(os.path.join(out, "icons"), exist_ok=True)
     say(f"  geometry   TILE={TILE}  up to {MAXVIS} entries without scrolling")
@@ -207,6 +227,13 @@ def build(background, darken, out, preview_path=None, quiet=False):
     say(f"  icons      {n} operating systems themed, each carrying its own name")
 
     bg = fit(background)
+    if str(blur).lower() == "auto":
+        blur = auto_blur(bg)
+        say(f"  blur       auto -> radius {blur}px  (detail {detail(bg):.2f}, target {TARGET_DETAIL})")
+    blur = int(blur)
+    if blur:
+        bg = bg.filter(ImageFilter.GaussianBlur(blur))
+    say(f"  blur       radius {blur}px   detail behind the plates -> {detail(bg):.2f}")
     lum_raw = luminance(bg)
     if str(darken).lower() == "auto":
         d_ = 0 if lum_raw <= TARGET_LUM else round((1 - TARGET_LUM / lum_raw) * 100)
@@ -283,12 +310,16 @@ if __name__ == "__main__":
     ap.add_argument("--background", default=None, help="photo to use (default: library default)")
     ap.add_argument("--darken", default=str(cfg.get("default_darken", 24)),
                     help="0 = untouched, 100 = black, or 'auto' (default: %(default)s)")
+    ap.add_argument("--blur", default=str(cfg.get("default_blur", "auto")),
+                    help="0 = sharp photo, or a radius in px, or 'auto' (default: %(default)s)")
     ap.add_argument("--out", default=os.path.join(HERE, "assets"))
     ap.add_argument("--preview", default=None, help="also write a full-screen preview here")
     a = ap.parse_args()
     if str(a.darken).lower() != "auto" and not (a.darken.isdigit() and 0 <= int(a.darken) <= 100):
         sys.exit("--darken must be 0-100 or 'auto'")
+    if str(a.blur).lower() != "auto" and not (a.blur.isdigit() and 0 <= int(a.blur) <= 60):
+        sys.exit("--blur must be 0-60 or 'auto'")
     bg = a.background or os.path.join(HERE, "library",
          next(s["file"] for s in cfg["backgrounds"] if s["slug"] == cfg["default"]).split("/")[-1])
     print(f"  background {bg}")
-    build(bg, a.darken, a.out, a.preview)
+    build(bg, a.darken, a.out, a.preview, blur=a.blur)

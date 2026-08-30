@@ -63,6 +63,22 @@ another system next year and it appears. Nothing here needs editing.
 
 Two things make that work.
 
+**The glass is blurred by rEFInd itself, at draw time.** A panel painted into
+an icon cannot blur what is behind it — the icon is generated long before anyone
+knows where it will be drawn. But rEFInd already crops the background to the
+exact tile before painting an entry:
+
+```c
+Background = egCropImage(GlobalConfig.ScreenBackground, XPos, YPos, W, H);
+```
+
+so the blur belongs there. `patches/frosted-glass.patch` adds `egFrostImage()`,
+which blurs that crop in proportion to the icon's own alpha — sharp where the
+icon is empty, frosted where the plate is — and a `frost_radius` token to
+control it. `./build-refind.sh --install` builds and installs it. Without the
+patched binary the theme still works; the plates are simply translucent rather
+than frosted.
+
 **The plate is inside the icon, not in the background.** rEFInd re-centres the
 row whenever the count changes — with two entries it starts at x=1299, with
 three at x=986 — so anything painted into the background at a fixed position
