@@ -447,16 +447,24 @@ def preview(assets, dst, icons, label, scale=None):
         t = Image.open(f"{assets}/icons/{fn}").convert("RGBA").resize((SMALL, SMALL), Image.LANCZOS)
         c.alpha_composite(t, (r1x + i * (TILE1 + XSP) + o1, r1y + o1))
     if label:
-        f = ImageFont.truetype(FONT_MONO, 44); a_, d_ = f.getmetrics()
-        cw, ch = math.ceil(f.getlength("M")), a_ + d_
-        cell = Image.new("RGBA", (cw * 96, ch), (255, 255, 255, 0)); dd = ImageDraw.Draw(cell)
-        for i in range(95):
-            dd.text((i * cw, 0), chr(32 + i), font=f, fill=(160,) * 3 + (255,))
+        # Use the font that was generated, not a fresh one drawn here. Redrawing
+        # it is how the preview came to show a grey line while the menu drew a
+        # tinted one -- two pieces of code choosing a colour, only one of which
+        # rEFInd ever sees. This reads the atlas and applies rEFInd's own rule
+        # from libeg/text.c: on a background darker than 128 the glyphs are
+        # inverted, r, g and b but not alpha.
+        atlas = Image.open(f"{assets}/font.png").convert("RGBA")
+        cw, ch = atlas.width // 96, atlas.height
+        band = c.crop((0, txty, W, min(H, txty + ch))).convert("L")
+        if ImageStat.Stat(band).mean[0] < 128:
+            r, g, b, a = atlas.split()
+            atlas = Image.merge("RGBA", (ImageChops.invert(r), ImageChops.invert(g),
+                                         ImageChops.invert(b), a))
         x = (W - cw * len(label)) // 2
         for ch_ in label:
             i = ord(ch_) - 32
             if 0 <= i < 95:
-                c.alpha_composite(cell.crop((i*cw, 0, (i+1)*cw, ch)), (x, txty))
+                c.alpha_composite(atlas.crop((i*cw, 0, (i+1)*cw, ch)), (x, txty))
             x += cw
     img = c.convert("RGB")
     if scale:
