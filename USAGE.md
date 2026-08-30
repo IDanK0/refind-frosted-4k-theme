@@ -144,6 +144,11 @@ size of the frosted plate baked into every icon. If you change them, run
 `./build.py` so the icons, the selection highlight and the glass stencil are
 redrawn to match.
 
+`handoff_splash` (1800) is how many milliseconds the chosen system is shown on
+its own before rEFInd hands over — the boot logo of everything this machine
+boots, since rEFInd is the only thing that runs before all of them. 1800 is one
+full turn of the ring; 0 switches it off and hands over immediately.
+
 `frost_radius` (32) is how far the glass scatters what is behind it; 0 switches
 the effect off and the plates go back to plain translucency. `frost_mask_big`
 names the stencil that says where the glass is — `build.py` writes it as
