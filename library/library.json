@@ -39,28 +39,28 @@
       "suggested_blur": 4
     },
     {
-      "slug": "morning-light-on-dunes",
-      "name": "Morning Light on Dunes",
-      "file": "library/morning-light-on-dunes.jpg",
-      "licence": "Public domain",
-      "author": "Great Sand Dunes National Park and Preserve",
-      "source": "https://upload.wikimedia.org/wikipedia/commons/d/d7/Morning_Light_on_Dunes_%2850365974052%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminance": 66.8,
-      "suggested_darken": 55,
-      "detail": 9.92,
-      "suggested_blur": 12
+      "slug": "dune-45-at-sunrise",
+      "name": "Dune 45 at Sunrise",
+      "file": "library/dune-45-at-sunrise.jpg",
+      "licence": "CC BY-SA 4.0",
+      "author": "Giles Laurent",
+      "source": "https://commons.wikimedia.org/wiki/File:006_Dune_45_in_Sossusvlei_at_sunrise_Photo_by_Giles_Laurent.jpg",
+      "luminance": 120.8,
+      "suggested_darken": 75,
+      "detail": 1.68,
+      "suggested_blur": 0
     },
     {
-      "slug": "snowy-dunes-in-moonlight",
-      "name": "Snowy Dunes in Moonlight",
-      "file": "library/snowy-dunes-in-moonlight.jpg",
-      "licence": "Public domain",
-      "author": "Great Sand Dunes National Park and Preserve",
-      "source": "https://upload.wikimedia.org/wikipedia/commons/1/15/Snowy_Dunes_in_Moonlight_%2831169526377%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminance": 135.9,
-      "suggested_darken": 78,
-      "detail": 4.27,
-      "suggested_blur": 8
+      "slug": "namib-dune-formations",
+      "name": "Namib Dune Formations",
+      "file": "library/namib-dune-formations.jpg",
+      "licence": "CC BY 2.0",
+      "author": "Sonse",
+      "source": "https://commons.wikimedia.org/wiki/File:Dune_Formations_Namib_Desert_(37053844764).jpg",
+      "luminance": 128.0,
+      "suggested_darken": 77,
+      "detail": 5.25,
+      "suggested_blur": 0
     },
     {
       "slug": "dunes-crestone-peaks-stars",
