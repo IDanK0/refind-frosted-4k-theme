@@ -25,7 +25,10 @@ from build import (apply_frost, duotone, shades, read_tint, W, H, TILE, TILE1,
 NAME    = "refind-frosted"
 NDOTS   = 6            # Windows uses five; six closes the ring more evenly
 DOT     = DOT_PX       # one dot, at 3840x2160; build.py draws it
-RING    = 110          # radius of the circle the dots travel
+RING    = 70           # radius of the circle the dots travel
+# 70, not the 110 this started at. The ring is a small thing under a name, the
+# way Windows draws it -- 140px across at 3840x2160, 6.5% of the screen's height.
+# At 110 it was 10%, which reads as a hoop rather than as a spinner.
 PERIOD  = 1.8          # seconds for one turn
 STAGGER = 0.100        # fraction of a period between one dot and the next
 SWING   = 0.55         # 0 = constant speed, 1 = a full stop at the top
