@@ -494,12 +494,21 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
 
     tone = (C.get("ramp"), tint / 100.0)
     pl = plate(PLATE, C["plate"], C["light"])
-    for stem, name, drawer in (("os_win8", "Windows", logo_windows),
-                               ("os_win",  "Windows", logo_windows),
-                               ("os_ubuntu", "Ubuntu", logo_ubuntu)):
+    # The Ubuntu release code-names all carry a mascot that exists only as a
+    # 128-pixel bitmap, and all of them are labelled "Ubuntu" anyway -- so they
+    # get the Ubuntu logo, drawn as vectors, and nothing is lost but the blur.
+    drawn = (("os_win8", "Windows", logo_windows),
+             ("os_win",  "Windows", logo_windows),
+             ("os_ubuntu", "Ubuntu", logo_ubuntu),
+             ("os_artful", "Ubuntu", logo_ubuntu),
+             ("os_bionic", "Ubuntu", logo_ubuntu),
+             ("os_trusty", "Ubuntu", logo_ubuntu),
+             ("os_xenial", "Ubuntu", logo_ubuntu),
+             ("os_zesty",  "Ubuntu", logo_ubuntu))
+    for stem, name, drawer in drawn:
         make_icon(pl, name, drawer=drawer, tone=tone,
                   label=C["light"]).save(f"{out}/icons/{stem}.png")
-    hand = {"os_win8", "os_win", "os_ubuntu"}
+    hand = {stem for stem, _, _ in drawn}
     n = len(hand)
     for src in sorted(glob.glob(os.path.join(HERE, "stock-icons", "os_*.png"))):
         stem = os.path.splitext(os.path.basename(src))[0]
