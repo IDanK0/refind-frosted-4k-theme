@@ -319,7 +319,7 @@ diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
      StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
 diff -ruN a/refind/main.c b/refind/main.c
 --- a/refind/main.c	2024-04-06 19:23:18.000000000 +0200
-+++ b/refind/main.c	2026-08-31 01:55:33.190237587 +0200
++++ b/refind/main.c	2026-08-31 02:59:39.490437649 +0200
 @@ -70,6 +70,7 @@
  #include "driver_support.h"
  #include "launch_efi.h"
@@ -357,15 +357,23 @@ diff -ruN a/refind/main.c b/refind/main.c
  } // VOID RescanAll()
  
  #ifdef __MAKEWITH_TIANO
-@@ -525,6 +530,7 @@
+@@ -525,10 +530,12 @@
      SetVolumeIcons();
      ScanForBootloaders(FALSE);
      ScanForTools();
 +    ApplyTheme();
  
-     // SetupScreen() clears the screen; but ScanForBootloaders() may display a
-     // message that must be deleted, so do so
-@@ -608,6 +614,10 @@
+-    // SetupScreen() clears the screen; but ScanForBootloaders() may display a
+-    // message that must be deleted, so do so
+-    BltClearScreen(TRUE);
++    // SetupScreen() left the screen black on purpose: the picture is painted
++    // once, here, now that the theme knows which one it is and what colour
++    // everything on it should be.
++    ThemeFadeIn();
+     pdInitialize();
+ 
+     if (GlobalConfig.ScanDelay > 0) {
+@@ -608,6 +615,10 @@
                  ManageHiddenTags();
                  break;
  
@@ -390,7 +398,7 @@ diff -ruN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -ruN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-31 01:41:57.808610544 +0200
++++ b/refind/menu.c	2026-08-31 03:05:16.932895011 +0200
 @@ -59,6 +59,7 @@
  #include "screen.h"
  #include "lib.h"
@@ -399,7 +407,20 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  #include "menu.h"
  #include "config.h"
  #include "libeg.h"
-@@ -97,6 +98,33 @@
+@@ -76,12 +77,6 @@
+ 
+ // other menu definitions
+ 
+-#define MENU_FUNCTION_INIT            (0)
+-#define MENU_FUNCTION_CLEANUP         (1)
+-#define MENU_FUNCTION_PAINT_ALL       (2)
+-#define MENU_FUNCTION_PAINT_SELECTION (3)
+-#define MENU_FUNCTION_PAINT_TIMEOUT   (4)
+-#define MENU_FUNCTION_PAINT_HINTS     (5)
+ 
+ // typedef VOID (*MENU_STYLE_FUNC)(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, IN UINTN Function, IN CHAR16 *ParamText);
+ 
+@@ -97,6 +92,33 @@
  #define TILE_YSPACING (16)
  
  static EG_IMAGE *SelectionImages[2] = { NULL, NULL };
@@ -433,7 +454,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  static EG_PIXEL SelectionBackgroundPixel = { 0xff, 0xff, 0xff, 0 };
  
  EFI_EVENT* WaitList = NULL;
-@@ -118,7 +146,7 @@
+@@ -118,7 +140,7 @@
  
  static VOID InitSelection(VOID)
  {
@@ -442,7 +463,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      BOOLEAN     LoadedSmallImage = FALSE;
  
      if (!AllowGraphicsMode)
-@@ -135,6 +163,7 @@
+@@ -135,6 +157,7 @@
      else
          LoadedSmallImage = TRUE;
      SelectionImages[1] = egScaleImage(TempSmallImage, TileSizes[1], TileSizes[1]);
@@ -450,7 +471,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  
      // load big selection image
      if (GlobalConfig.SelectionBigFileName != NULL) {
-@@ -149,6 +178,28 @@
+@@ -149,6 +172,28 @@
          }
      }
      SelectionImages[0] = egScaleImage(TempBigImage, TileSizes[0], TileSizes[0]);
@@ -479,7 +500,16 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  
      if (TempSmallImage)
          egFreeImage(TempSmallImage);
-@@ -857,7 +908,7 @@
+@@ -160,7 +205,7 @@
+ // Scrolling functions
+ //
+ 
+-static VOID InitScroll(OUT SCROLL_STATE *State, IN UINTN ItemCount, IN UINTN VisibleSpace)
++VOID InitScroll(OUT SCROLL_STATE *State, IN UINTN ItemCount, IN UINTN VisibleSpace)
+ {
+     State->PreviousSelection = State->CurrentSelection = 0;
+     State->MaxIndex = (INTN)ItemCount - 1;
+@@ -857,7 +902,7 @@
  
          // render the text
          egRenderText(Text, TextBuffer, egGetFontCellWidth(), TEXT_YMARGIN, (Bg.r + Bg.g + Bg.b) / 3);
@@ -488,7 +518,16 @@ diff -ruN a/refind/menu.c b/refind/menu.c
          egFreeImage(TextBuffer);
      }
  } /* VOID DrawText() */
-@@ -905,7 +956,7 @@
+@@ -885,7 +930,7 @@
+ // Display text against the screen's background image. Special case: If Text is NULL
+ // or 0-length, clear the line. Does NOT indent the text or reposition it relative
+ // to the specified XPos and YPos values.
+-static VOID DrawTextWithTransparency(IN CHAR16 *Text, IN UINTN XPos, IN UINTN YPos)
++VOID DrawTextWithTransparency(IN CHAR16 *Text, IN UINTN XPos, IN UINTN YPos)
+ {
+     UINTN TextWidth;
+     EG_IMAGE *TextBuffer = NULL;
+@@ -905,7 +950,7 @@
  
      // render the text
      egRenderText(Text, TextBuffer, 0, 0, AverageBrightness(TextBuffer));
@@ -497,7 +536,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1125,218 @@
+@@ -1074,31 +1119,218 @@
  // graphical main menu style
  //
  
@@ -730,7 +769,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1388,8 @@
+@@ -1150,10 +1382,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -743,7 +782,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1410,281 @@
+@@ -1174,6 +1404,281 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -1025,7 +1064,7 @@ diff -ruN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1698,7 @@
+@@ -1187,7 +1692,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -1034,15 +1073,94 @@ diff -ruN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
+@@ -1460,7 +1965,7 @@
+         return;
+ 
+     if (AllowGraphicsMode)
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+     HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
+     HideItemMenu.Title = Title;
+     AddMenuInfoLine(&HideItemMenu, Message);
+@@ -1538,7 +2043,7 @@
+     LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
+     HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
+     if (AllowGraphicsMode)
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+ 
+     HiddenTags = ReadHiddenTags(L"HiddenTags");
+     SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
+@@ -1640,7 +2145,7 @@
+         return FALSE;
+ 
+     if (AllowGraphicsMode)
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+ 
+     if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
+         FullPath = StrDuplicate(Loader->Volume->VolName);
+@@ -1678,7 +2183,7 @@
+     BOOLEAN            TagHidden = FALSE;
+ 
+     if (AllowGraphicsMode)
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+ 
+     AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
+     AddMenuEntry(HideItemMenu, &MenuEntryYes);
+@@ -1700,7 +2205,7 @@
+     BOOLEAN            TagHidden = FALSE;
+ 
+     if (AllowGraphicsMode)
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+ 
+     if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
+         Name = StrDuplicate(LegacyLoader->me.Title);
+@@ -1789,7 +2294,7 @@
+ 
+     LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
+     if (AllowGraphicsMode)
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+ 
+     return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
+ }
+@@ -1814,7 +2319,7 @@
+     }
+ 
+     if (AllowGraphicsMode) {
+-        Style = GraphicsMenuStyle;
++        Style = ThemeMenuStyle;
+         MainStyle = MainMenuStyle;
+         
+         PointerEnabled = PointerActive = pdAvailable();
 diff -ruN a/refind/menu.h b/refind/menu.h
 --- a/refind/menu.h	2024-01-28 19:51:20.000000000 +0100
-+++ b/refind/menu.h	2026-08-31 01:41:13.676180857 +0200
-@@ -131,6 +131,8 @@
++++ b/refind/menu.h	2026-08-31 03:04:38.927332169 +0200
+@@ -61,6 +61,13 @@
+ // menu module
+ //
+ 
++#define MENU_FUNCTION_INIT            (0)
++#define MENU_FUNCTION_CLEANUP         (1)
++#define MENU_FUNCTION_PAINT_ALL       (2)
++#define MENU_FUNCTION_PAINT_SELECTION (3)
++#define MENU_FUNCTION_PAINT_TIMEOUT   (4)
++#define MENU_FUNCTION_PAINT_HINTS     (5)
++
+ #define MENU_EXIT_ENTER   (1)
+ #define MENU_EXIT_ESCAPE  (2)
+ #define MENU_EXIT_DETAILS (3)
+@@ -131,6 +138,10 @@
  CHAR16* ReadHiddenTags(CHAR16 *VarName);
  UINTN RunMainMenu(IN REFIT_MENU_SCREEN *Screen, IN CHAR16** DefaultSelection, OUT REFIT_MENU_ENTRY **ChosenEntry);
  UINTN FindMainMenuItem(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, IN UINTN PosX, IN UINTN PosY);
 +VOID ShowHandoffSplash(IN EG_IMAGE *Icon);
 +VOID ResetTheming(VOID);
++VOID InitScroll(OUT SCROLL_STATE *State, IN UINTN ItemCount, IN UINTN VisibleSpace);
++VOID DrawTextWithTransparency(IN CHAR16 *Text, IN UINTN XPos, IN UINTN YPos);
  VOID GenerateWaitList();
  UINTN WaitForInput(IN UINTN Timeout);
  
@@ -1186,8 +1304,33 @@ diff -ruN a/refind/scan.c b/refind/scan.c
              case TAG_FWUPDATE_TOOL:
 diff -ruN a/refind/screen.c b/refind/screen.c
 --- a/refind/screen.c	2024-03-23 23:21:19.000000000 +0100
-+++ b/refind/screen.c	2026-08-31 01:41:57.808385799 +0200
-@@ -246,8 +246,19 @@
++++ b/refind/screen.c	2026-08-31 02:59:39.523326392 +0200
+@@ -64,6 +64,7 @@
+ #include "mystrings.h"
+ #include "log.h"
+ #include "../include/refit_call_wrapper.h"
++#include "theme.h"
+ 
+ #include "../include/egemb_refind_banner.h"
+ 
+@@ -201,11 +202,11 @@
+             HaveResized = TRUE;
+         } // if
+         SwitchToGraphics();
+-        if (GlobalConfig.ScreensaverTime != -1) {
+-           BltClearScreen(TRUE);
+-        } else { // start with screen blanked
+-           GraphicsScreenDirty = TRUE;
+-        }
++        // Stay black. Painting the banner here means painting it again once the
++        // theme has chosen the real one, with a clear to black in between: three
++        // full-screen writes to show one picture. ThemeFadeIn() does it once,
++        // after the scan, coming up out of this black.
++        GraphicsScreenDirty = TRUE;
+     }
+ } // VOID SetupScreen()
+ 
+@@ -246,8 +247,19 @@
          UseGraphicsMode = FALSE;
  
      if (UseGraphicsMode) {
@@ -1204,11 +1347,11 @@ diff -ruN a/refind/screen.c b/refind/screen.c
 +        // black, so give it black.
          SwitchToGraphics();
 -        BltClearScreen(FALSE);
-+        egClearScreen(&DarkBackgroundPixel);
++        ThemeFadeOut();
      } else {
          egClearScreen(&DarkBackgroundPixel);
          DrawScreenHeader(Title);
-@@ -432,9 +443,28 @@
+@@ -432,9 +444,28 @@
          BltClearScreen(TRUE);
  }
  
@@ -1238,7 +1381,7 @@ diff -ruN a/refind/screen.c b/refind/screen.c
      EG_IMAGE *NewBanner = NULL;
      INTN BannerPosX, BannerPosY;
      EG_PIXEL Black = { 0x0, 0x0, 0x0, 0 };
-@@ -442,7 +472,9 @@
+@@ -442,7 +473,9 @@
      if (ShowBanner && !(GlobalConfig.HideUIFlags & HIDEUI_FLAG_BANNER)) {
          // load banner on first call
          if (Banner == NULL) {
@@ -1249,7 +1392,28 @@ diff -ruN a/refind/screen.c b/refind/screen.c
                  Banner = egLoadImage(SelfDir, GlobalConfig.BannerFileName, FALSE);
              if (Banner == NULL)
                  Banner = egPrepareEmbeddedImage(&egemb_refind_banner, FALSE);
-@@ -577,7 +609,7 @@
+@@ -464,11 +497,15 @@
+            MenuBackgroundPixel = Banner->PixelData[0];
+         } // if Banner exists
+ 
+-        // clear and draw banner
+-        if (GlobalConfig.ScreensaverTime != -1)
+-           egClearScreen(&MenuBackgroundPixel);
+-        else
+-           egClearScreen(&Black);
++        // Clear and draw banner. A banner that covers the screen makes the clear
++        // pure waste -- a whole extra full-screen write before the write that
++        // hides it, which at 3840x2160 is a third of a second of visible wipe.
++        if ((Banner == NULL) || (Banner->Width < UGAWidth) || (Banner->Height < UGAHeight)) {
++            if (GlobalConfig.ScreensaverTime != -1)
++               egClearScreen(&MenuBackgroundPixel);
++            else
++               egClearScreen(&Black);
++        }
+ 
+         if (Banner != NULL) {
+             BannerPosX = (Banner->Width < UGAWidth) ? ((UGAWidth - Banner->Width) / 2) : 0;
+@@ -577,7 +614,7 @@
       // blit to screen and clean up
       if (CompImage != NULL) {
           if (CompImage->HasAlpha)
@@ -1273,8 +1437,8 @@ diff -ruN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -ruN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-08-31 02:04:35.542526959 +0200
-@@ -0,0 +1,565 @@
++++ b/refind/theme.c	2026-08-31 03:09:22.694071442 +0200
+@@ -0,0 +1,959 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -1313,6 +1477,11 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +#define RAMP_LIGHT       (219)
 +#define CHROMA_FLOOR     (20)
 +#define CHROMA_CEILING   (52)
++// How much of the peak chroma the ends of the ramp keep, in 255ths. Not zero: a
++// duotone whose chroma vanishes at both ends turns everything white back into
++// grey, and the white things here -- the names, the rim of the glass, the dots
++// of the spinner -- are most of what carries the colour.
++#define RAMP_END         (107)
 +
 +static EG_PIXEL  Ramp[RAMP_STEPS];
 +static BOOLEAN   RampReady = FALSE;
@@ -1446,6 +1615,7 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +        u = 255 - AbsI(2 * t - 255);            // a triangle, peaking at the middle
 +        s = (u * (510 - u)) / 255;              // broadened, so the top is flat-ish
 +        if (s > 255) s = 255;
++        s = RAMP_END + ((255 - RAMP_END) * s) / 255;   // and never all the way down
 +        for (k = 0; k < 3; k++) {
 +            comp = v + (Dir[k] * peak * s) / (1024 * 255);
 +            if (comp < 0)   comp = 0;
@@ -1641,10 +1811,399 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +    PristineCount = 0;
 +} // VOID ThemeForgetIcons()
 +
++#define FADE_FRAMES (7)
++#define FADE_STALL  (12000)
++
++// The picture arriving, and leaving.
++//
++// rEFInd used to paint the whole screen three times before the menu appeared:
++// once in SetupScreen(), once more after the scan, and a clear to black in
++// between. At 3840x2160 each of those is a third of a second of visible wiping,
++// so what you saw was a wipe, a pause, a black flash and another wipe. Now the
++// screen stays black until there is something worth showing, and then the
++// picture comes up once, out of the black.
++static VOID FadeBanner(IN BOOLEAN In) {
++    EG_IMAGE *From, *Mix;
++    UINTN     f, i, n, Alpha, Step;
++
++    From = In ? ThemeBanner : egCopyScreen();
++    if (From == NULL)
++        return;
++    Mix = egCreateImage(From->Width, From->Height, FALSE);
++    if (Mix == NULL) {
++        if (!In) egFreeImage(From);
++        return;
++    }
++    n = Mix->Width * Mix->Height;
++    for (f = 1; f <= FADE_FRAMES; f++) {
++        Step = In ? f : (FADE_FRAMES - f);
++        Alpha = (256 * Step) / FADE_FRAMES;
++        for (i = 0; i < n; i++) {
++            Mix->PixelData[i].r = (UINT8) (((UINTN) From->PixelData[i].r * Alpha) >> 8);
++            Mix->PixelData[i].g = (UINT8) (((UINTN) From->PixelData[i].g * Alpha) >> 8);
++            Mix->PixelData[i].b = (UINT8) (((UINTN) From->PixelData[i].b * Alpha) >> 8);
++            Mix->PixelData[i].a = 0;
++        }
++        BltImage(Mix, 0, 0);
++        refit_call1_wrapper(BS->Stall, FADE_STALL);
++    }
++    egFreeImage(Mix);
++    if (!In)
++        egFreeImage(From);
++} // VOID FadeBanner()
++
++// The one paint that replaces the three. Called once the theme knows what it is
++// drawing, so the picture that comes up is the final one.
++VOID ThemeFadeIn(VOID) {
++    EG_PIXEL Black = { 0, 0, 0, 0 };
++
++    if (!AllowGraphicsMode)
++        return;
++    SwitchToGraphics();
++    if (GlobalConfig.Animations && (ThemeBanner != NULL)) {
++        egClearScreen(&Black);
++        FadeBanner(TRUE);
++    }
++    BltClearScreen(TRUE);      // the final frame, and it records ScreenBackground
++} // VOID ThemeFadeIn()
++
++// Going the other way, so an operating system is not handed a screen that
++// snapped to black on the last frame of an animation.
++VOID ThemeFadeOut(VOID) {
++    EG_PIXEL Black = { 0, 0, 0, 0 };
++
++    if (AllowGraphicsMode && GlobalConfig.Animations)
++        FadeBanner(FALSE);
++    egClearScreen(&Black);
++} // VOID ThemeFadeOut()
++
 +// Reachable from menu.c, which owns the selection images and the spinner dot.
 +EG_IMAGE * ThemeTint(IN EG_IMAGE *Source) {
 +    return TintCopy(Source, GlobalConfig.Tint);
 +} // EG_IMAGE * ThemeTint()
++
++//
++// A panel of the same glass the menu is made of
++//
++// rEFInd's own sub-menus are a flat grey rectangle with a line of text in it,
++// which is fine and looks nothing like the rest of this. Everything below draws
++// them the way the tiles are drawn: the photograph frosted behind a rounded
++// pane, a lit rim, the theme's colours, and the selected row on a rounded bar.
++// One style function serves all of them -- settings, about, hidden tags, the
++// boot-options sub-screens -- so there is no second appearance to keep in step.
++//
++
++#define PANEL_GLASS  (26)     // the pane's own tint
++#define PANEL_RIM    (205)    // its lit edge
++#define PANEL_HAIR   (150)    // the hairline just inside the top
++#define PANEL_PAD_X  (3)      // padding, in font cells
++#define PANEL_PAD_Y  (1)      // padding, in text lines
++#define PANEL_FADE   (4)
++
++static UINTN PanelX, PanelY, PanelW, PanelH, RowH, RowTop, RowsCount;
++static EG_IMAGE *PanelShown = NULL;
++
++static EG_PIXEL RampAt(UINTN i) {
++    EG_PIXEL White = { 0xff, 0xff, 0xff, 0 };
++    if (!RampReady)
++        return White;
++    return Ramp[(i > 255) ? 255 : i];
++} // EG_PIXEL RampAt()
++
++// Coverage of a rounded rectangle, written into an alpha channel. Only the four
++// corners are sampled: everything between them is covered, and sampling a whole
++// panel sixteen times per pixel to learn that would cost more than the panel.
++static VOID RoundedAlpha(IN OUT EG_IMAGE *Image, IN UINTN Radius) {
++    UINTN x, y, sx, sy, Hits, cx, cy, W, H;
++    INTN  dx, dy, R2;
++
++    if (Image == NULL)
++        return;
++    W = Image->Width; H = Image->Height;
++    if (Radius * 2 > W) Radius = W / 2;
++    if (Radius * 2 > H) Radius = H / 2;
++    for (y = 0; y < H; y++)
++        for (x = 0; x < W; x++)
++            Image->PixelData[y * W + x].a = 255;
++    if (Radius < 2)
++        return;
++    // In eighths of a pixel: the corner's centre sits at 8*Radius and its radius
++    // is 8*Radius, so the square of it is 64*Radius*Radius. Sixteen would be a
++    // corner of half the size, which leaves the outside of the corner box
++    // uncovered -- a rounded rectangle with the corners bitten out of it.
++    R2 = 64 * (INTN) Radius * (INTN) Radius;
++    for (y = 0; y < Radius; y++) {
++        for (x = 0; x < Radius; x++) {
++            Hits = 0;
++            for (sy = 0; sy < 4; sy++) {
++                for (sx = 0; sx < 4; sx++) {
++                    dx = (INTN) (8 * x + 2 * sx + 1) - 8 * (INTN) Radius;
++                    dy = (INTN) (8 * y + 2 * sy + 1) - 8 * (INTN) Radius;
++                    if (dx * dx + dy * dy <= R2)
++                        Hits++;
++                }
++            }
++            for (cy = 0; cy < 2; cy++) {
++                for (cx = 0; cx < 2; cx++) {
++                    UINTN px = cx ? (W - 1 - x) : x;
++                    UINTN py = cy ? (H - 1 - y) : y;
++                    Image->PixelData[py * W + px].a = (UINT8) ((Hits * 255) / 16);
++                }
++            }
++        }
++    }
++} // VOID RoundedAlpha()
++
++// Lay a colour over an image through a mask, at a given strength.
++static VOID Wash(IN OUT EG_IMAGE *Dest, IN EG_IMAGE *Mask, IN EG_PIXEL Colour,
++                 IN UINTN Alpha) {
++    UINTN i, n, a;
++
++    if ((Dest == NULL) || (Mask == NULL))
++        return;
++    n = Dest->Width * Dest->Height;
++    for (i = 0; i < n; i++) {
++        a = ((UINTN) Mask->PixelData[i].a * Alpha) / 255;
++        if (a == 0)
++            continue;
++        Dest->PixelData[i].r = (UINT8) (((UINTN) Dest->PixelData[i].r * (255 - a) +
++                                         (UINTN) Colour.r * a) / 255);
++        Dest->PixelData[i].g = (UINT8) (((UINTN) Dest->PixelData[i].g * (255 - a) +
++                                         (UINTN) Colour.g * a) / 255);
++        Dest->PixelData[i].b = (UINT8) (((UINTN) Dest->PixelData[i].b * (255 - a) +
++                                         (UINTN) Colour.b * a) / 255);
++    }
++} // VOID Wash()
++
++// A ring: a rounded rectangle with a smaller one subtracted from the middle of
++// it. The inner one is built at its own smaller size and read with an offset --
++// building both at full size and trying to shift one while subtracting is how
++// the corners came out notched.
++static EG_IMAGE * RimMask(IN UINTN W, IN UINTN H, IN UINTN Radius, IN UINTN Width) {
++    EG_IMAGE *Outer, *Inner;
++    UINTN     x, y, a, b;
++
++    if ((W <= 2 * Width) || (H <= 2 * Width))
++        return NULL;
++    Outer = egCreateImage(W, H, TRUE);
++    Inner = egCreateImage(W - 2 * Width, H - 2 * Width, TRUE);
++    if ((Outer == NULL) || (Inner == NULL)) {
++        egFreeImage(Outer); egFreeImage(Inner);
++        return NULL;
++    }
++    RoundedAlpha(Outer, Radius);
++    RoundedAlpha(Inner, (Radius > Width) ? Radius - Width : 0);
++    for (y = 0; y < H; y++) {
++        for (x = 0; x < W; x++) {
++            a = Outer->PixelData[y * W + x].a;
++            b = 0;
++            if ((x >= Width) && (y >= Width) &&
++                (x < W - Width) && (y < H - Width))
++                b = Inner->PixelData[(y - Width) * Inner->Width + (x - Width)].a;
++            Outer->PixelData[y * W + x].a = (UINT8) ((a > b) ? a - b : 0);
++        }
++    }
++    egFreeImage(Inner);
++    return Outer;
++} // EG_IMAGE * RimMask()
++
++// The pane itself: the photograph frosted where the glass is, tinted, and rimmed.
++static EG_IMAGE * MakePanel(VOID) {
++    EG_IMAGE *Panel, *Shape, *Rim;
++    UINTN     Radius;
++
++    Panel = egCropImage(GlobalConfig.ScreenBackground, PanelX, PanelY, PanelW, PanelH);
++    if (Panel == NULL)
++        return NULL;
++    Radius = RowH;
++    if (Radius > PanelH / 4) Radius = PanelH / 4;
++
++    Shape = egCreateImage(PanelW, PanelH, TRUE);
++    if (Shape != NULL) {
++        RoundedAlpha(Shape, Radius);
++        egFrostImage(Panel, Shape, GlobalConfig.FrostRadius);
++        Wash(Panel, Shape, RampAt(255), PANEL_GLASS);
++    }
++    Rim = RimMask(PanelW, PanelH, Radius, 3);
++    if (Rim != NULL) {
++        Wash(Panel, Rim, RampAt(255), PANEL_RIM);
++        egFreeImage(Rim);
++    }
++    Rim = RimMask(PanelW, PanelH, (Radius > 6) ? Radius - 6 : 1, 1);
++    if (Rim != NULL) {
++        UINTN x, y;
++        // only the top half catches the bevel
++        for (y = PanelH / 2; y < PanelH; y++)
++            for (x = 0; x < PanelW; x++)
++                Rim->PixelData[y * PanelW + x].a = 0;
++        Wash(Panel, Rim, RampAt(255), PANEL_HAIR);
++        egFreeImage(Rim);
++    }
++    egFreeImage(Shape);
++    return Panel;
++} // EG_IMAGE * MakePanel()
++
++// Lay a colour through a mask that covers only part of the panel.
++static VOID WashArea(IN OUT EG_IMAGE *Dest, IN EG_IMAGE *Mask, IN UINTN AtX,
++                     IN UINTN AtY, IN EG_PIXEL Colour, IN UINTN Alpha) {
++    UINTN x, y, a, i, j;
++
++    if ((Dest == NULL) || (Mask == NULL))
++        return;
++    for (y = 0; (y < Mask->Height) && (AtY + y < Dest->Height); y++) {
++        for (x = 0; (x < Mask->Width) && (AtX + x < Dest->Width); x++) {
++            a = ((UINTN) Mask->PixelData[y * Mask->Width + x].a * Alpha) / 255;
++            if (a == 0)
++                continue;
++            i = (AtY + y) * Dest->Width + (AtX + x);
++            j = 255 - a;
++            Dest->PixelData[i].r = (UINT8) (((UINTN) Dest->PixelData[i].r * j + (UINTN) Colour.r * a) / 255);
++            Dest->PixelData[i].g = (UINT8) (((UINTN) Dest->PixelData[i].g * j + (UINTN) Colour.g * a) / 255);
++            Dest->PixelData[i].b = (UINT8) (((UINTN) Dest->PixelData[i].b * j + (UINTN) Colour.b * a) / 255);
++        }
++    }
++} // VOID WashArea()
++
++static UINTN CellW(VOID) {
++    UINTN w = egComputeTextWidth(L"M");
++    return (w > 0) ? w : 8;
++}
++
++// Compose the whole panel -- glass, title, lines, rows -- and put it up in one
++// piece. Drawing it in parts is what makes a menu flicker; this way the screen
++// changes once.
++static VOID PaintPanel(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State) {
++    EG_IMAGE *Panel, *Bar, *Mix;
++    UINTN     i, y, cw, tw, n, Alpha, f;
++    INTN      e;
++
++    Panel = MakePanel();
++    if (Panel == NULL)
++        return;
++    cw = CellW();
++
++    if (Screen->Title != NULL) {
++        tw = egComputeTextWidth(Screen->Title);
++        egRenderText(Screen->Title, Panel, (PanelW > tw) ? (PanelW - tw) / 2 : 0,
++                     PANEL_PAD_Y * RowH, 40);
++    }
++    y = RowTop;
++    for (i = 0; i < Screen->InfoLineCount; i++) {
++        if (Screen->InfoLines[i] != NULL)
++            egRenderText(Screen->InfoLines[i], Panel, PANEL_PAD_X * cw, y, 40);
++        y += RowH;
++    }
++    y += RowH / 2;
++
++    Bar = egCreateImage(PanelW - (PANEL_PAD_X - 1) * cw * 2, RowH, TRUE);
++    if (Bar != NULL)
++        RoundedAlpha(Bar, RowH / 3);
++    for (e = State->FirstVisible; (e <= State->LastVisible) && (e <= State->MaxIndex); e++) {
++        BOOLEAN Chosen = (e == State->CurrentSelection);
++        if (Chosen && (Bar != NULL))
++            WashArea(Panel, Bar, (PANEL_PAD_X - 1) * cw, y, RampAt(255), 225);
++        if (Screen->Entries[e]->Title != NULL)
++            egRenderText(Screen->Entries[e]->Title, Panel, PANEL_PAD_X * cw,
++                         y + (RowH - egGetFontHeight()) / 2, Chosen ? 230 : 40);
++        y += RowH;
++    }
++    egFreeImage(Bar);
++
++    // Cross-fade from whatever was there, so the highlight slides rather than
++    // snaps. Skipped the moment a key is already waiting.
++    if (GlobalConfig.Animations && (PanelShown != NULL) &&
++        (PanelShown->Width == PanelW) && (PanelShown->Height == PanelH) &&
++        (refit_call1_wrapper(BS->CheckEvent, ST->ConIn->WaitForKey) != EFI_SUCCESS)) {
++        Mix = egCreateImage(PanelW, PanelH, FALSE);
++        if (Mix != NULL) {
++            n = PanelW * PanelH;
++            for (f = 1; f <= PANEL_FADE; f++) {
++                Alpha = (256 * f) / PANEL_FADE;
++                for (i = 0; i < n; i++) {
++                    Mix->PixelData[i].r = (UINT8) (((UINTN) PanelShown->PixelData[i].r * (256 - Alpha) +
++                                                    (UINTN) Panel->PixelData[i].r * Alpha) >> 8);
++                    Mix->PixelData[i].g = (UINT8) (((UINTN) PanelShown->PixelData[i].g * (256 - Alpha) +
++                                                    (UINTN) Panel->PixelData[i].g * Alpha) >> 8);
++                    Mix->PixelData[i].b = (UINT8) (((UINTN) PanelShown->PixelData[i].b * (256 - Alpha) +
++                                                    (UINTN) Panel->PixelData[i].b * Alpha) >> 8);
++                }
++                BltImage(Mix, PanelX, PanelY);
++                refit_call1_wrapper(BS->Stall, 9000);
++            }
++            egFreeImage(Mix);
++        }
++    }
++    BltImage(Panel, PanelX, PanelY);
++    egFreeImage(PanelShown);
++    PanelShown = Panel;
++} // VOID PaintPanel()
++
++// The style every sub-menu is drawn with: settings, about, hidden tags, the
++// boot-options sub-screens. One appearance, not two.
++VOID ThemeMenuStyle(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
++                    IN UINTN Function, IN CHAR16 *ParamText) {
++    UINTN i, cw, Widest = 0, w, MaxRows;
++
++    switch (Function) {
++        case MENU_FUNCTION_INIT:
++            cw   = CellW();
++            RowH = egGetFontHeight() + egGetFontHeight() / 2;
++            if (Screen->Title != NULL)
++                Widest = egComputeTextWidth(Screen->Title);
++            for (i = 0; i < Screen->InfoLineCount; i++) {
++                w = egComputeTextWidth(Screen->InfoLines[i]);
++                if (w > Widest) Widest = w;
++            }
++            for (i = 0; i < Screen->EntryCount; i++) {
++                w = egComputeTextWidth(Screen->Entries[i]->Title);
++                if (w > Widest) Widest = w;
++            }
++            PanelW = Widest + 2 * PANEL_PAD_X * cw;
++            if (PanelW > UGAWidth - 8 * cw)
++                PanelW = UGAWidth - 8 * cw;
++
++            MaxRows = (UGAHeight - 8 * RowH) / RowH;
++            InitScroll(State, Screen->EntryCount, MaxRows);
++            // InitScroll works out how many things fit from the width of a menu
++            // TILE, which is the right answer for the main menu and gives five
++            // for a list of text: the sixth row of a six-row menu simply was not
++            // drawn. A panel of lines is bounded by the height of a line.
++            RowsCount = (MaxRows < Screen->EntryCount) ? MaxRows : Screen->EntryCount;
++            if (RowsCount < 1)
++                RowsCount = 1;
++            State->MaxVisible  = (INTN) RowsCount;
++            State->LastVisible = State->FirstVisible + State->MaxVisible - 1;
++
++            RowTop = PANEL_PAD_Y * RowH + RowH + RowH / 2;
++            PanelH = RowTop + Screen->InfoLineCount * RowH + RowH / 2
++                     + RowsCount * RowH + PANEL_PAD_Y * RowH;
++            PanelX = (UGAWidth  - PanelW) / 2;
++            PanelY = (UGAHeight - PanelH) / 2;
++            SwitchToGraphicsAndClear();
++            egFreeImage(PanelShown);
++            PanelShown = NULL;
++            break;
++
++        case MENU_FUNCTION_CLEANUP:
++            egFreeImage(PanelShown);
++            PanelShown = NULL;
++            break;
++
++        case MENU_FUNCTION_PAINT_ALL:
++        case MENU_FUNCTION_PAINT_SELECTION:
++            PaintPanel(Screen, State);
++            break;
++
++        case MENU_FUNCTION_PAINT_TIMEOUT:
++            if (ParamText != NULL) {
++                UINTN tw = egComputeTextWidth(ParamText);
++                DrawTextWithTransparency(L"", 0, PanelY + PanelH + RowH / 2);
++                DrawTextWithTransparency(ParamText, (UGAWidth - tw) / 2,
++                                         PanelY + PanelH + RowH / 2);
++            }
++            break;
++    }
++} // VOID ThemeMenuStyle()
 +
 +//
 +// The settings screen
@@ -1750,7 +2309,7 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +                                L"Enter changes a setting, Esc returns to the menu",
 +                                L"" };
 +    REFIT_MENU_ENTRY  *Rows[6], *Chosen;
-+    MENU_STYLE_FUNC    Style = AllowGraphicsMode ? GraphicsMenuStyle : TextMenuStyle;
++    MENU_STYLE_FUNC    Style = AllowGraphicsMode ? ThemeMenuStyle : TextMenuStyle;
 +    CHAR16            *List;
 +    UINTN              Count, Exit, i;
 +    INTN               Default = 0;
@@ -1779,7 +2338,6 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +        AddMenuInfoLine(&Menu, PoolPrint(L"%d photographs in EFI\\refind\\%s",
 +                                         Count, BACKGROUND_DIR));
 +        AddMenuInfoLine(&Menu, StrDuplicate(L"Drop your own in there from any system"));
-+        AddMenuInfoLine(&Menu, StrDuplicate(L""));
 +
 +        Rows[0] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
 +        Rows[0]->Title = PoolPrint(L"Background           %s",
@@ -1842,8 +2400,8 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +} // VOID ShowSettingsMenu()
 diff -ruN a/refind/theme.h b/refind/theme.h
 --- a/refind/theme.h	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.h	2026-08-31 01:55:33.190196592 +0200
-@@ -0,0 +1,27 @@
++++ b/refind/theme.h	2026-08-31 03:04:56.336488547 +0200
+@@ -0,0 +1,36 @@
 +/*
 + * refind/theme.h
 + * Choosing and applying the look, from inside the boot menu.
@@ -1853,6 +2411,7 @@ diff -ruN a/refind/theme.h b/refind/theme.h
 +#define __THEME_H_
 +
 +#include "global.h"
++#include "menu.h"       // SCROLL_STATE, MENU_FUNCTION_*
 +#include "../libeg/libeg.h"
 +
 +// Work out the colours from the current background and lay them over the icons,
@@ -1863,9 +2422,17 @@ diff -ruN a/refind/theme.h b/refind/theme.h
 +// Forget the icons remembered from a menu that no longer exists.
 +VOID ThemeForgetIcons(VOID);
 +
++// The background coming up out of black, and going back down into it.
++VOID ThemeFadeIn(VOID);
++VOID ThemeFadeOut(VOID);
++
 +// The settings screen: background, dimming, glass, colour, animation, and a way
 +// to write the choices to EFI\refind\theme.conf so they survive a reboot.
 +VOID ShowSettingsMenu(VOID);
++
++// Every sub-menu drawn as a pane of the same glass the tiles are made of.
++VOID ThemeMenuStyle(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
++                    IN UINTN Function, IN CHAR16 *ParamText);
 +
 +// Tint one image the way the rest of the theme is tinted.
 +EG_IMAGE * ThemeTint(IN EG_IMAGE *Source);

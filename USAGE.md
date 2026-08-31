@@ -19,6 +19,9 @@ Pick **Settings** in the tool row.
 | **Animations** | on or off |
 | **Save these for next time** | writes `EFI/refind/theme.conf` |
 
+The panel is drawn as a pane of the same glass the tiles are made of, and so is
+every other sub-menu — about, hidden tags, boot options.
+
 Every change takes effect the moment you make it — press Esc and the menu is
 already wearing it. Only *Save* makes it survive a reboot.
 
