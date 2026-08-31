@@ -60,6 +60,22 @@ choices made from the boot menu are never overwritten by a reinstall.
 
 ---
 
+## Before adding a photograph
+
+```bash
+./check-photos.py '~/Pictures/*.jpg'
+```
+
+Four thousand pixels across is not the same as four thousand pixels of picture.
+This measures noise, colour noise, mottling and where the detail actually stops,
+on the image as it will be used — cropped to 16:9 and resampled to 3840×2160.
+
+A good photograph reads roughly: noise under 2, chroma under 0.6, mottling under
+4, sharpness near 75%. Anything with noise above 3 or sharpness far below 70% has
+less picture in it than its pixel count suggests.
+
+---
+
 ## Before trusting a build
 
 ```bash

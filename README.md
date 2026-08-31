@@ -147,6 +147,31 @@ fixes any of them.
 
 ---
 
+## Four thousand pixels is not four thousand pixels
+
+Two of the photographs in the library had 4K of pixels and nowhere near 4K of
+picture. It does not show in a thumbnail; it shows at 1:1, and it shows in
+numbers. `check-photos.py` measures four:
+
+| | |
+|---|---|
+| **noise** | Immerkær's estimator — a kernel whose response is zero for anything smooth, so what survives it is noise |
+| **chroma** | the same on the colour-difference planes; colour noise is the objectionable kind and a luminance measure walks straight past it |
+| **mottling** | average to 8×8, subtract the large-scale trend, measure the rest — a sky's gradient disappears, blotching does not |
+| **sharpness** | where the radial power spectrum meets the noise floor, against what 3840 pixels could carry |
+
+`morning-light-on-dunes` came out at noise 7.15 — eight times everything else —
+and sharpness 35%: four thousand pixels across, thirteen hundred of picture.
+`snowy-dunes-in-moonlight` measured clean on the first pass and was visibly
+blotchy at 1:1, which is what the chroma and mottling measures were added for.
+Both are gone.
+
+Everything is measured on the picture *as it will be used* — cropped to 16:9 and
+resampled to 3840×2160 — because that is where the noise ends up, not where it
+started. Point it at your own photographs before adding them.
+
+---
+
 ## One colour, taken from the photograph
 
 Everything on the screen is drawn in a hue read out of the picture behind it:
