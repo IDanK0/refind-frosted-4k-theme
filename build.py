@@ -146,100 +146,128 @@ TOOLS = [(t_settings, "func_settings.png"), (t_about, "func_about.png"), (t_hidd
          (t_chip,  "func_firmware.png")]
 
 # -------------------------------------------------------------------- colour
+def isqrt(n):
+    """Integer square root, as theme.c has it."""
+    if n <= 0:
+        return 0
+    r, b = 0, 1 << 62
+    while b > n:
+        b >>= 2
+    while b > 0:
+        if n >= r + b:
+            n -= r + b
+            r = (r >> 1) + b
+        else:
+            r >>= 1
+        b >>= 2
+    return r
+
+
 def accent(im):
-    """The photograph's characteristic colour, as a hue and a saturation.
+    """The photograph's colour: a direction away from grey, and a mean chroma.
 
-    A plain average is useless here: opposite hues cancel and everything comes
-    out grey. So the hues are averaged as points on a circle, weighted by how
-    colourful and how bright each pixel is.
+    A transcription of SampleAccent() in refind/theme.c, integer for integer, so
+    that the preview and the machine cannot disagree about a colour. When these
+    were two different formulations -- HSV here, vectors there -- they drifted 24
+    levels apart, which is a preview showing a colour the machine will not draw.
 
-    Brightness has to count for a great deal -- v cubed, not v. With v alone, a
-    vast dark dune drags the circular mean away from the small bright sky that
-    the eye actually reads the picture by: on the default photograph that landed
-    on 341 degrees, a pink, when the sky is at 13 and the picture is plainly
-    warm. Cubed, it comes out at 17."""
-    small = im.convert("RGB").resize((240, 135), Image.LANCZOS)
+    There is no trigonometry in either. Averaging hues wants a circular mean, and
+    a circular mean wants sines; but every colour is a grey plus a departure from
+    grey, that departure lives in the plane at right angles to the grey axis, and
+    averaging departures IS the circular mean written in linear coordinates.
+
+    Brightness is cubed in the weight, because with brightness counting once a
+    vast dark dune outvotes the small bright sky the eye reads the picture by."""
+    small = im.convert("RGB")
     raw = small.tobytes()
-    x = y = weight = sat = 0.0
-    for i in range(0, len(raw), 3):
-        r, g, b = raw[i], raw[i + 1], raw[i + 2]
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        w = (s ** 1.5) * (v ** 3)
-        if w <= 0:
-            continue
-        a = h * 2 * math.pi
-        x += math.cos(a) * w
-        y += math.sin(a) * w
-        weight += w
-        sat += s * w
-    if weight < 1e-6:
-        return 0.0, 0.0
-    return (math.atan2(y, x) % (2 * math.pi)) / (2 * math.pi), sat / weight
+    w_, h_ = small.size
+    step = max(1, (w_ * h_) // 60000)
+    ax = ay = az = 0
+    weight = chroma_sum = count = 0
+    for y in range(h_):
+        base = y * w_ * 3
+        for x in range(0, w_, step):
+            i = base + x * 3
+            r, g, b = raw[i], raw[i + 1], raw[i + 2]
+            hi = r if r > g else g
+            if b > hi: hi = b
+            lo = r if r < g else g
+            if b < lo: lo = b
+            c = hi - lo
+            if c < 6 or hi < 8:
+                continue
+            wt = ((c * c) // 256 + 1) * ((hi * hi * hi) // 65536 + 1)
+            mid = (r + g + b) // 3
+            dx, dy, dz = r - mid, g - mid, b - mid
+            ln = isqrt(dx * dx + dy * dy + dz * dz)
+            if ln < 1:
+                continue
+            ax += (dx * wt) // ln
+            ay += (dy * wt) // ln
+            az += (dz * wt) // ln
+            count += 1
+            weight += wt
+            chroma_sum += c * wt
+    if weight < 1 or count < 1:
+        return (0, 0, 0), 0
+    ax //= count; ay //= count; az //= count
+    ln = isqrt(ax * ax + ay * ay + az * az)
+    if ln < 1:
+        return (0, 0, 0), 0
+    return ((ax * 1024) // ln, (ay * 1024) // ln, (az * 1024) // ln), chroma_sum // weight
 
 
-# How far each part of the theme is pushed towards the photograph's hue, as
-# (factor, floor, ceiling, lightness) applied to the picture's own saturation.
-# The floor matters: scaling saturation purely in proportion leaves a muted
-# photograph with a theme indistinguishable from grey, which is not what asking
-# for the picture's colour means. The ceiling stops a vivid one shouting.
-TONE = {
-    "plate": (0.18, 0.05, 0.12, 0.92),   # the panel's own tint
-    "dark":  (0.30, 0.08, 0.20, 0.20),   # unused since the ramp took over
-    "light": (0.22, 0.06, 0.14, 0.88),   # the border, the names, the tool glyphs
-    "glyph": (0.22, 0.06, 0.14, 0.88),
-    "text":  (0.22, 0.06, 0.14, 0.63),   # the line rEFInd writes at the bottom
-}
-# These are deliberately near-neutral. The point is a warm grey that belongs to
-# the photograph, not a coloured theme: at the default photograph's 43%
-# saturation they come out around 0.09, which is a tint you read as warmth
-# rather than as a colour. What makes it look like more than that is the ramp
-# below, which stops a logo turning grey in its own middle.
-# The ramp a logo is laid along: (chroma at the peak, how broad the peak is,
-# lightness at the dark end, at the light end). The chroma has to peak in the
-# middle rather than run straight from a dark colour to a light one, because a
-# straight line between two colours passes through their average -- which is
-# nearly grey -- and a logo sits in the middle of its own range, exactly where
-# that happens. The Windows blue lands at 0.60 of the way up; a straight ramp
-# gives it a saturation of 0.17, this gives it 0.43.
-LOGO_RAMP  = (0.28, 1.4, 0.18, 0.86)
-GREY_PHOTO = 0.04       # below this the picture has no colour to lend
+def accent_hue(direction):
+    """Only so it can be said out loud: the direction as an angle, in degrees."""
+    dx, dy, dz = direction
+    return math.degrees(math.atan2(math.sqrt(3) * (dy - dz), 2 * dx - dy - dz)) % 360
 
 
-def shades(im, strength=1.0):
-    """Every colour in the theme, drawn from the photograph.
+# The colours the theme is drawn in when it is NOT taking them from a photograph.
+NEUTRAL = {"plate": (214, 226, 248), "dark": (30, 34, 44), "light": (255, 255, 255),
+           "glyph": (232, 238, 250), "text": (160, 160, 160)}
 
-    One hue runs through all of it -- the panel, the logos, the names, the tool
-    glyphs, the dots of the spinner -- at different saturations and lightnesses,
-    so nothing on the screen is a colour the picture does not contain. At
-    strength 0 these are the plain neutrals the theme used before."""
-    NEUTRAL = {"plate": (214, 226, 248), "dark": (30, 34, 44), "light": (255, 255, 255),
-               "glyph": (232, 238, 250), "text": (160, 160, 160)}
-    if strength <= 0:
-        return NEUTRAL
-    h, s = accent(im)
-    if s < GREY_PHOTO:
-        return NEUTRAL
-    k = min(1.0, strength)
-    def mix(a, b):
-        return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
-    out = {}
-    for part, (sf, lo, hi, v) in TONE.items():
-        c = colorsys.hsv_to_rgb(h, max(lo, min(s * sf, hi)), v)
-        out[part] = mix(NEUTRAL[part], tuple(int(x * 255) for x in c))
-    peak, bulge, v_dark, v_light = LOGO_RAMP
-    out["ramp"] = ramp(h, max(0.08, min(s * 0.28, peak)), bulge, v_dark, v_light)
+# The ramp a logo is laid along, in the units refind/theme.c uses. These must
+# match RAMP_DARK, RAMP_LIGHT, CHROMA_FLOOR, CHROMA_CEILING and RAMP_END there.
+RAMP_DARK, RAMP_LIGHT = 46, 219
+CHROMA_FLOOR, CHROMA_CEILING = 20, 52
+RAMP_END = 107          # what the ends keep of the peak chroma, in 255ths.
+# Not zero: a duotone whose chroma vanishes at both ends turns everything white
+# back into grey, and the white things here -- the names under the icons, the rim
+# of the glass, the dots of the spinner -- are most of what carries the colour.
+
+
+def ramp(direction, chroma):
+    """256 colours from dark to light, chroma fullest in the middle.
+
+    BuildRamp() from refind/theme.c, transcribed. A straight line between a dark
+    colour and a light one passes through their average, which is close to grey,
+    and the middle of the range is exactly where a logo sits -- so a straight
+    ramp takes the colour out of the one part anybody looks at."""
+    peak = max(CHROMA_FLOOR, min((chroma * 45) // 100, CHROMA_CEILING))
+    out = []
+    for t in range(256):
+        v = RAMP_DARK + ((RAMP_LIGHT - RAMP_DARK) * t) // 255
+        u = 255 - abs(2 * t - 255)
+        sat = min((u * (510 - u)) // 255, 255)
+        sat = RAMP_END + ((255 - RAMP_END) * sat) // 255
+        out.append(tuple(max(0, min(255, v + (direction[k] * peak * sat) // (1024 * 255)))
+                         for k in range(3)))
     return out
 
 
-def ramp(h, peak, bulge, v_dark, v_light):
-    """256 colours from dark to light in one hue, chroma fullest in the middle."""
-    table = []
-    for i in range(256):
-        t = i / 255
-        sat = peak * (1 - abs(2 * t - 1) ** bulge)
-        val = v_dark + (v_light - v_dark) * t
-        table.append(tuple(int(c * 255) for c in colorsys.hsv_to_rgb(h, sat, val)))
-    return table
+def shades(im, strength=1.0):
+    """What the theme is drawn in. The flat colours are the neutrals, because the
+    artwork on disk is neutral and rEFInd colours it at boot; the ramp is what
+    does the colouring, and it is computed the same way there and here."""
+    if strength <= 0:
+        return dict(NEUTRAL)
+    direction, chroma = accent(im)
+    if chroma < 6:
+        return dict(NEUTRAL)
+    out = dict(NEUTRAL)
+    out["ramp"] = ramp(direction, chroma)
+    return out
 
 
 def duotone(img, table, strength):
@@ -448,9 +476,9 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     # what the machine will draw.
     C = shades(bg, 0.0)
     GR = tuple(C["glyph"]) + (255,)
-    h, sat = accent(bg)
+    direction, chroma = accent(bg)
     say(f"  colour     assets written neutral; rEFInd tints at boot "
-        f"(this photo: hue {h*360:.0f}\u00b0, saturation {sat*100:.0f}%, at {tint}%)")
+        f"(this photo: hue {accent_hue(direction):.0f}\u00b0, chroma {chroma}, at {tint}%)")
 
     # font: the glyphs are drawn INVERTED. libeg/text.c does 255-x on dark
     # backgrounds, so what is written here is the complement of what appears.
