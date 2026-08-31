@@ -18,6 +18,10 @@ from build import (W, H, TILE, TILE1, XSP, YSP, ICON_OFF, R0Y, BIG, FROST,
 from plymouth import layout, dot, angle, NDOTS, DOT, RING, PERIOD
 
 IN_FRAMES, SEL_FRAMES, OUT_FRAMES, MOVE_FRAMES = 9, 5, 7, 14
+# menu.c's durations, in milliseconds. The frame counts above are the resolution
+# of the easing curve, not the length of the animation: the bootloader runs each
+# one by the clock and draws as many frames as the machine manages.
+IN_STEP_MS, OUT_MS, MOVE_MS = 40, 280, 450
 FRAME_MS   = 10
 FONT_H     = 52
 SHOTS      = os.path.join(HERE, "screenshots")
@@ -74,7 +78,7 @@ def main():
             box = (x, y, x + s, y + s)
             c.paste(blend(bg.crop(box), menu.crop(box), a), box)
         frames.append(c)
-    save_gif("anim-in.gif", frames, FRAME_MS * 4)
+    save_gif("anim-in.gif", frames, IN_STEP_MS)
 
     # --- the menu leaving, and the chosen tile travelling to the middle
     icon = Image.open(os.path.join(ASSETS, "icons", f"{icons[0]}.png")) \
@@ -120,7 +124,7 @@ def main():
             c.alpha_composite(d, (int(cx + RING * math.cos(ang) - DOT / 2),
                                   int(cy + RING * math.sin(ang) - DOT / 2)))
         frames.append(c.convert("RGB"))
-    save_gif("anim-handoff.gif", frames, FRAME_MS * 5)
+    save_gif("anim-handoff.gif", frames, (OUT_MS + MOVE_MS) // (OUT_FRAMES + MOVE_FRAMES))
 
 
 if __name__ == "__main__":

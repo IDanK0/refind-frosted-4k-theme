@@ -432,6 +432,20 @@ once against a stall of known length, and each one runs for the duration it is
 meant to take: a slow display draws fewer frames, a fast one draws more, and both
 finish at the same moment.
 
+That change came with a lesson attached. The old numbers were frame counts, and
+they had never been durations at all — the time to draw a frame was hidden
+inside each one, so the menu that "took 180 ms" had really been taking a second
+and a half on the machine it was written for. Run by the clock, 180 ms of
+arrival reads as no arrival: the animations looked deleted. The durations are
+now stated outright — a tile begins its fade 40 ms after the one to its left and
+takes 360 ms over it, the selection moves in 170, the menu dissolves in 280 and
+the chosen tile travels for 450 — and the frame counts are only the resolution
+of the easing curve.
+
+None of which is worth guessing at, so `log_level 1` makes each step say how
+long after the keypress it happened, into the log on the EFI partition. A
+machine that feels slow can be asked where the time went.
+
 None of this trades quality for speed. Every image is still composed at full
 resolution, the blur radius is unchanged, and the animations last exactly as long
 as they were designed to — there is simply less repetition of work already done.
