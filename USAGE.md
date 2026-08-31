@@ -155,6 +155,13 @@ chosen tile travel to the middle instead of jumping. All of it stops the moment 
 keystroke is waiting, so holding an arrow key is as fast as it ever was; `false`
 turns it off.
 
+`log_level` (0) turns on rEFInd's log, written to `EFI\refind\refind.log` on
+the EFI partition. At 1 it also records how long each step took after the key
+that asked for it — the screen painted, the photograph decoded, the handoff
+ready to draw — which is how to find out where a machine that feels slow is
+actually spending its time, rather than guessing at it. It costs a file write
+per line, so leave it at 0 unless you are measuring.
+
 `fade` (false) cross-fades the whole screen when the menu appears and when it
 goes away. It is off because at 3840x2160 one screen is 33 MB and the fade is
 eight of them, pushed through the framebuffer before anything is on it: on a real
