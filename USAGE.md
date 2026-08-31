@@ -155,6 +155,12 @@ chosen tile travel to the middle instead of jumping. All of it stops the moment 
 keystroke is waiting, so holding an arrow key is as fast as it ever was; `false`
 turns it off.
 
+`fade` (false) cross-fades the whole screen when the menu appears and when it
+goes away. It is off because at 3840x2160 one screen is 33 MB and the fade is
+eight of them, pushed through the framebuffer before anything is on it: on a real
+machine that is the slow wipe from top to bottom. The menu's own entrance, which
+is the part you actually watch, is unaffected either way.
+
 `handoff_splash` (1800) is how many milliseconds the chosen system is shown on
 its own before rEFInd hands over — the boot logo of everything this machine
 boots, since rEFInd is the only thing that runs before all of them. 1800 is one
