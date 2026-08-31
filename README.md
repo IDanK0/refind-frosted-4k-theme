@@ -308,6 +308,54 @@ was before any of this existed. `animations false` turns the lot off.
 `menu.c` uses — 0..256, cubic, no floating point — so timing can be looked at
 without building a bootloader.
 
+### What it costs to draw
+
+At 3840x2160 a single screen is 8.3 million pixels — 33 MB through the
+framebuffer. A wipe from the top of the screen to the bottom is not an effect
+anybody chose; it is what one of those looks like when the firmware is doing the
+copying. So the count is instrumented rather than guessed: `BltImage()` was made
+to total the pixels it pushes, and the totals logged at each step of a 4K boot in
+the virtual machine.
+
+| | before | after |
+|---|---|---|
+| painting the first screen | 8 blits, 66 Mpx | 1 blit, 8 Mpx |
+| everything up to the drawn menu | 171 blits, 88 Mpx | 164 blits, 30 Mpx |
+| the fade on the way out | 23 Mpx | 4 Mpx |
+
+Four things account for it.
+
+**The screen is painted once.** `SetupScreen()` used to paint the background
+before the theme knew which photograph it was or what colour anything on it
+should be, so the picture went up, then went up again. It now marks the screen
+dirty and leaves it black; `main.c` paints after the scans, once.
+
+**The full-screen cross-fade is off by default** (`fade`). It is eight whole
+screens before the menu is even there, which is precisely the slow wipe it was
+supposed to hide. The tiles still fade themselves in, which is the part you watch.
+
+**Pixels that did not change are not sent.** The dissolve on the way to a system
+used to fade the whole 3840-wide band the menu lives in. It now compares that
+band against the background once and fades only the box the drawn content
+occupies — 972x661 out of 3840x841, a fifth of it — which is the same picture,
+because every pixel outside that box already *is* the background.
+
+**Nothing is frosted twice.** A blur of a 549-pixel plate is the single most
+expensive thing here, so the tiles keep the last twelve in a cache keyed on
+position, and the settings panel keeps its glass — moving the highlight one row
+used to re-blur 1.26 million pixels to draw a bar 40 pixels tall.
+
+Underneath all of it, `egDirectDraw()` writes rows straight into
+`GraphicsOutput->Mode->FrameBufferBase` with `CopyMem` when the mode is 32-bit
+BGRX, falling back to the firmware's own `Blt` for anything else. The firmware
+call is a general-purpose routine that has to cope with any pixel format and any
+overlap; when the format is already the one `EG_IMAGE` uses, the copy is a
+`memcpy` per row and the firmware is not involved at all.
+
+None of this trades quality for speed. Every image is still composed at full
+resolution, the blur radius is unchanged, and the frames are the frames they
+were — there is simply less repetition of work already done.
+
 ---
 
 ## The boot logo of everything
