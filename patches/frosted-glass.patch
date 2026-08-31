@@ -152,7 +152,7 @@ diff -urN a/libeg/image.c b/libeg/image.c
 I file binari a/libeg/libeg.a e b/libeg/libeg.a sono diversi
 diff -urN a/libeg/libeg.h b/libeg/libeg.h
 --- a/libeg/libeg.h	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/libeg.h	2026-08-30 18:43:56.375084899 +0200
++++ b/libeg/libeg.h	2026-08-31 15:30:50.999499605 +0200
 @@ -127,6 +127,7 @@
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
                       IN EG_PIXEL *Color);
@@ -161,7 +161,7 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
  
  UINTN egGetFontHeight(VOID);
  UINTN egGetFontCellWidth(VOID);
-@@ -137,7 +138,7 @@
+@@ -137,13 +138,14 @@
  
  VOID egClearScreen(IN EG_PIXEL *Color);
  VOID egDrawImage(IN EG_IMAGE *Image, IN UINTN ScreenPosX, IN UINTN ScreenPosY);
@@ -170,9 +170,16 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
  VOID egDrawImageArea(IN EG_IMAGE *Image,
                       IN UINTN AreaPosX, IN UINTN AreaPosY,
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
+                      IN UINTN ScreenPosX, IN UINTN ScreenPosY);
+ VOID egDisplayMessage(IN CHAR16 *Text, EG_PIXEL *BGColor, UINTN PositionCode);
+ EG_IMAGE * egCopyScreen(VOID);
++VOID egForgetShadow(VOID);
+ EG_IMAGE * egCopyScreenArea(UINTN XPos, UINTN YPos, UINTN Width, UINTN Height);
+ VOID egScreenShot(VOID);
+ BOOLEAN egSetTextMode(UINT32 RequestedMode);
 diff -urN a/libeg/screen.c b/libeg/screen.c
 --- a/libeg/screen.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/screen.c	2026-08-31 15:06:53.195970394 +0200
++++ b/libeg/screen.c	2026-08-31 15:31:16.493243831 +0200
 @@ -163,6 +163,69 @@
  // Stores the results in the file-global variables egScreenWidth,
  // egScreenHeight, and egHasGraphics. The first two of these will be
@@ -251,7 +258,28 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      } else if (UgaDraw != NULL) {
          Status = refit_call5_wrapper(UgaDraw->GetMode, UgaDraw, &UGAWidth, &UGAHeight, &UGADepth, &UGARefreshRate);
          if (EFI_ERROR(Status)) {
-@@ -518,17 +582,128 @@
+@@ -445,6 +509,12 @@
+ // Drawing to the screen
+ //
+ 
++// Kept below, next to the mirror they write into.
++static VOID egShadowFill(IN EG_PIXEL *Colour);
++static VOID egShadowNote(IN EG_IMAGE *Image, IN UINTN AreaPosX, IN UINTN AreaPosY,
++                         IN UINTN AreaWidth, IN UINTN AreaHeight,
++                         IN UINTN ScreenPosX, IN UINTN ScreenPosY);
++
+ VOID egClearScreen(IN EG_PIXEL *Color)
+ {
+     EFI_UGA_PIXEL FillColor;
+@@ -462,6 +532,7 @@
+         FillColor.Blue  = 0x0;
+     }
+     FillColor.Reserved = 0;
++    egShadowFill((EG_PIXEL *) &FillColor);
+ 
+     if (GraphicsOutput != NULL) {
+         // EFI_GRAPHICS_OUTPUT_BLT_PIXEL and EFI_UGA_PIXEL have the same
+@@ -518,17 +589,203 @@
  // Display an unselected icon on the screen, so that the background image shows
  // through the transparency areas. The BadgeImage may be NULL, in which case
  // it's not composited in.
@@ -359,6 +387,81 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +    return TRUE;
 +} // BOOLEAN egDirectDraw()
 +
++// What is on the screen, kept in ordinary memory.
++//
++// A framebuffer is quick to write and desperately slow to read: a write is
++// posted and forgotten, a read is a round trip to the card that nothing can
++// buffer. The cross-fade on the way to an operating system begins by reading
++// back the band the menu lives in -- thirteen megabytes -- and that read is the
++// pause between pressing Enter and seeing anything happen.
++//
++// So nothing is ever read back. Every write to the screen is mirrored here, and
++// the mirror is what gets read. It costs one copy in ordinary memory, which at
++// 35 GB/s is beneath noticing, and it is exact: it holds what was drawn, which
++// is what the reader wanted to know.
++//
++// It is only trusted once a whole screen has gone through it, and it is dropped
++// whenever something else might have drawn -- text mode, or a program rEFInd
++// launched and came back from.
++static EG_IMAGE *Shadow      = NULL;
++static BOOLEAN   ShadowValid = FALSE;
++
++VOID egForgetShadow(VOID) {
++    ShadowValid = FALSE;
++}
++
++static VOID egShadowNote(IN EG_IMAGE *Image, IN UINTN AreaPosX, IN UINTN AreaPosY,
++                         IN UINTN AreaWidth, IN UINTN AreaHeight,
++                         IN UINTN ScreenPosX, IN UINTN ScreenPosY) {
++    UINTN y;
++
++    if ((egScreenWidth == 0) || (egScreenHeight == 0))
++        return;
++    if ((Shadow != NULL) &&
++        ((Shadow->Width != egScreenWidth) || (Shadow->Height != egScreenHeight))) {
++        egFreeImage(Shadow);
++        Shadow = NULL;
++        ShadowValid = FALSE;
++    }
++    if (Shadow == NULL) {
++        Shadow = egCreateImage(egScreenWidth, egScreenHeight, FALSE);
++        ShadowValid = FALSE;
++        if (Shadow == NULL)
++            return;
++    }
++    if ((ScreenPosX + AreaWidth > egScreenWidth) ||
++        (ScreenPosY + AreaHeight > egScreenHeight))
++        return;
++    for (y = 0; y < AreaHeight; y++)
++        egCopyWide((UINT8 *) (Shadow->PixelData + (ScreenPosY + y) * Shadow->Width + ScreenPosX),
++                   (UINT8 *) (Image->PixelData + (AreaPosY + y) * Image->Width + AreaPosX),
++                   AreaWidth * 4);
++    if ((AreaWidth == egScreenWidth) && (AreaHeight == egScreenHeight))
++        ShadowValid = TRUE;         // a whole screen has passed through
++} // VOID egShadowNote()
++
++static VOID egShadowFill(IN EG_PIXEL *Colour) {
++    UINTN i, Count;
++
++    if ((egScreenWidth == 0) || (egScreenHeight == 0))
++        return;
++    if ((Shadow != NULL) &&
++        ((Shadow->Width != egScreenWidth) || (Shadow->Height != egScreenHeight))) {
++        egFreeImage(Shadow);
++        Shadow = NULL;
++    }
++    if (Shadow == NULL)
++        Shadow = egCreateImage(egScreenWidth, egScreenHeight, FALSE);
++    if (Shadow == NULL) {
++        ShadowValid = FALSE;
++        return;
++    }
++    Count = Shadow->Width * Shadow->Height;
++    for (i = 0; i < Count; i++)
++        Shadow->PixelData[i] = *Colour;
++    ShadowValid = TRUE;
++} // VOID egShadowFill()
++
 +// The same road in the other direction. Reading the screen back is what the
 +// cross-fades do to find out what they are fading from, and the firmware's own
 +// read is a pixel at a time.
@@ -381,10 +484,12 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  VOID egDrawImageArea(IN EG_IMAGE *Image,
                       IN UINTN AreaPosX, IN UINTN AreaPosY,
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
-@@ -541,6 +716,10 @@
+@@ -541,6 +798,12 @@
      if (AreaWidth == 0)
          return;
  
++    egShadowNote(Image, AreaPosX, AreaPosY, AreaWidth, AreaHeight, ScreenPosX, ScreenPosY);
++
 +    if (egDirectDraw(Image, AreaPosX, AreaPosY, AreaWidth, AreaHeight,
 +                     ScreenPosX, ScreenPosY))
 +        return;
@@ -392,9 +497,21 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      if (GraphicsOutput != NULL) {
          refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
                               EfiBltBufferToVideo, AreaPosX, AreaPosY, ScreenPosX, ScreenPosY, AreaWidth, AreaHeight,
-@@ -608,7 +787,9 @@
+@@ -607,8 +870,21 @@
+         return NULL;
      }
  
++    // what was drawn, from memory rather than from the card
++    if (ShadowValid && (Shadow != NULL) &&
++        (XPos + Width <= Shadow->Width) && (YPos + Height <= Shadow->Height)) {
++        UINTN y;
++        for (y = 0; y < Height; y++)
++            egCopyWide((UINT8 *) (Image->PixelData + y * Image->Width),
++                       (UINT8 *) (Shadow->PixelData + (YPos + y) * Shadow->Width + XPos),
++                       Width * 4);
++        return Image;
++    }
++
      // get full screen image
 -    if (GraphicsOutput != NULL) {
 +    if (egDirectRead(Image, XPos, YPos)) {
@@ -612,7 +729,7 @@ diff -urN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-31 15:01:53.367958577 +0200
++++ b/refind/menu.c	2026-08-31 15:43:24.180945949 +0200
 @@ -59,6 +59,7 @@
  #include "screen.h"
  #include "lib.h"
@@ -823,7 +940,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        TicksPerUs = 1;                             // no clock: every frame is "now"
 +}
 +
-+static UINT64 NowUs(VOID) {
++UINT64 NowUs(VOID) {
 +    if (TicksPerUs == 0)
 +        StartClock();               // never answer 0 forever: that is a loop
 +    return ReadTicks() / TicksPerUs;
@@ -1569,7 +1686,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          PointerEnabled = PointerActive = pdAvailable();
 diff -urN a/refind/menu.h b/refind/menu.h
 --- a/refind/menu.h	2024-01-28 19:51:20.000000000 +0100
-+++ b/refind/menu.h	2026-08-31 03:04:38.927332169 +0200
++++ b/refind/menu.h	2026-08-31 15:26:00.107865291 +0200
 @@ -61,6 +61,13 @@
  // menu module
  //
@@ -1584,7 +1701,7 @@ diff -urN a/refind/menu.h b/refind/menu.h
  #define MENU_EXIT_ENTER   (1)
  #define MENU_EXIT_ESCAPE  (2)
  #define MENU_EXIT_DETAILS (3)
-@@ -131,6 +138,10 @@
+@@ -131,9 +138,15 @@
  CHAR16* ReadHiddenTags(CHAR16 *VarName);
  UINTN RunMainMenu(IN REFIT_MENU_SCREEN *Screen, IN CHAR16** DefaultSelection, OUT REFIT_MENU_ENTRY **ChosenEntry);
  UINTN FindMainMenuItem(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, IN UINTN PosX, IN UINTN PosY);
@@ -1595,6 +1712,11 @@ diff -urN a/refind/menu.h b/refind/menu.h
  VOID GenerateWaitList();
  UINTN WaitForInput(IN UINTN Timeout);
  
+ #endif
+ 
+ /* EOF */
++
++UINT64 NowUs(VOID);
 diff -urN a/refind/scan.c b/refind/scan.c
 --- a/refind/scan.c	2024-04-04 17:18:11.000000000 +0200
 +++ b/refind/scan.c	2026-08-31 01:40:32.913116668 +0200
@@ -1735,7 +1857,7 @@ diff -urN a/refind/scan.c b/refind/scan.c
              case TAG_FWUPDATE_TOOL:
 diff -urN a/refind/screen.c b/refind/screen.c
 --- a/refind/screen.c	2024-03-23 23:21:19.000000000 +0100
-+++ b/refind/screen.c	2026-08-31 14:20:10.428734781 +0200
++++ b/refind/screen.c	2026-08-31 15:31:06.457845211 +0200
 @@ -64,6 +64,7 @@
  #include "mystrings.h"
  #include "log.h"
@@ -1744,7 +1866,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
  
  #include "../include/egemb_refind_banner.h"
  
-@@ -201,11 +202,11 @@
+@@ -201,16 +202,17 @@
              HaveResized = TRUE;
          } // if
          SwitchToGraphics();
@@ -1761,7 +1883,13 @@ diff -urN a/refind/screen.c b/refind/screen.c
      }
  } // VOID SetupScreen()
  
-@@ -246,8 +247,19 @@
+ VOID SwitchToText(IN BOOLEAN CursorEnabled)
+ {
++    egForgetShadow();       // the console is about to draw where we cannot see
+     egSetGraphicsModeEnabled(FALSE);
+     refit_call2_wrapper(ST->ConOut->EnableCursor, ST->ConOut, CursorEnabled);
+     // get size of text console
+@@ -246,8 +248,19 @@
          UseGraphicsMode = FALSE;
  
      if (UseGraphicsMode) {
@@ -1782,7 +1910,15 @@ diff -urN a/refind/screen.c b/refind/screen.c
      } else {
          egClearScreen(&DarkBackgroundPixel);
          DrawScreenHeader(Title);
-@@ -432,9 +444,28 @@
+@@ -258,6 +271,7 @@
+ VOID FinishExternalScreen(VOID)
+ {
+     // make sure we clean up later
++    egForgetShadow();       // whatever ran had the screen to itself
+     GraphicsScreenDirty = TRUE;
+ 
+     // Reset the screen resolution, in case external program changed it....
+@@ -432,9 +446,28 @@
          BltClearScreen(TRUE);
  }
  
@@ -1812,7 +1948,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
      EG_IMAGE *NewBanner = NULL;
      INTN BannerPosX, BannerPosY;
      EG_PIXEL Black = { 0x0, 0x0, 0x0, 0 };
-@@ -442,7 +473,9 @@
+@@ -442,7 +475,9 @@
      if (ShowBanner && !(GlobalConfig.HideUIFlags & HIDEUI_FLAG_BANNER)) {
          // load banner on first call
          if (Banner == NULL) {
@@ -1823,7 +1959,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
                  Banner = egLoadImage(SelfDir, GlobalConfig.BannerFileName, FALSE);
              if (Banner == NULL)
                  Banner = egPrepareEmbeddedImage(&egemb_refind_banner, FALSE);
-@@ -464,11 +497,15 @@
+@@ -464,11 +499,15 @@
             MenuBackgroundPixel = Banner->PixelData[0];
          } // if Banner exists
  
@@ -1844,7 +1980,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
  
          if (Banner != NULL) {
              BannerPosX = (Banner->Width < UGAWidth) ? ((UGAWidth - Banner->Width) / 2) : 0;
-@@ -577,7 +614,7 @@
+@@ -577,7 +616,7 @@
       // blit to screen and clean up
       if (CompImage != NULL) {
           if (CompImage->HasAlpha)
@@ -1868,8 +2004,8 @@ diff -urN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -urN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-08-31 14:54:58.027667342 +0200
-@@ -0,0 +1,962 @@
++++ b/refind/theme.c	2026-08-31 15:37:47.244288826 +0200
+@@ -0,0 +1,998 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -2738,6 +2874,28 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    return PoolPrint(L"Dimming              %d%%", GlobalConfig.Darken);
 +} // CHAR16 * DarkenLabel()
 +
++// Put the panel up now, with whatever the rows currently say.
++//
++// The point is the order of events. Changing a setting means re-reading a
++// photograph and dimming eight million pixels, and doing that before drawing
++// anything means the screen sits still from the keypress until the work is
++// done -- which reads as the machine having missed the key. Drawing first
++// costs a fifth of a second and answers immediately; the photograph follows
++// when it is ready.
++static VOID ShowPanelNow(IN REFIT_MENU_SCREEN *Screen, IN INTN Selected) {
++    SCROLL_STATE State;
++
++    if (!AllowGraphicsMode || (Screen->EntryCount == 0))
++        return;
++    ZeroMem(&State, sizeof(State));
++    State.MaxIndex         = (INTN) Screen->EntryCount - 1;
++    State.CurrentSelection = (Selected > State.MaxIndex) ? State.MaxIndex : Selected;
++    State.FirstVisible     = 0;
++    State.LastVisible      = State.MaxIndex;
++    ThemeMenuStyle(Screen, &State, MENU_FUNCTION_INIT, NULL);
++    ThemeMenuStyle(Screen, &State, MENU_FUNCTION_PAINT_ALL, NULL);
++} // VOID ShowPanelNow()
++
 +VOID ShowSettingsMenu(VOID) {
 +    REFIT_MENU_SCREEN  Menu = { L"Settings", NULL, 0, NULL, 0, NULL, 0, NULL,
 +                                L"Enter changes a setting, Esc returns to the menu",
@@ -2748,6 +2906,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    UINTN              Count, Exit, i;
 +    INTN               Default = 0;
 +    BOOLEAN            Running = TRUE, Saved = FALSE;
++    BOOLEAN            Pending = FALSE, NeedTheme = FALSE, NewPhoto = FALSE;
 +
 +    List = ListBackgrounds(&Count);
 +    if ((GlobalConfig.BackgroundFile == NULL) && (Count > 0))
@@ -2794,18 +2953,32 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +            AddMenuEntry(&Menu, Rows[i]);
 +        }
 +
++        // Answer the last keypress before doing what it asked for.
++        if (Pending) {
++            ShowPanelNow(&Menu, Default);
++            if (NeedTheme)
++                ApplyTheme();
++            if (NewPhoto)
++                MarkScreenDirty();      // only a new photograph needs the screen back
++            Pending = NeedTheme = NewPhoto = FALSE;
++        }
++
 +        Exit = RunGenericMenu(&Menu, Style, &Default, &Chosen);
 +        if (Exit != MENU_EXIT_ENTER) {
 +            Running = FALSE;
 +            continue;
 +        }
 +        Saved = FALSE;
++        Pending = TRUE;
++        NeedTheme = TRUE;
 +        if (Chosen == Rows[0]) {
 +            NextBackground(List, Count, 1);
++            NewPhoto = TRUE;
 +        } else if (Chosen == Rows[1]) {
 +            if (GlobalConfig.Darken == DARKEN_AUTO)      GlobalConfig.Darken = 0;
 +            else if (GlobalConfig.Darken >= 80)          GlobalConfig.Darken = DARKEN_AUTO;
 +            else                                          GlobalConfig.Darken += 10;
++            NewPhoto = TRUE;                 // the picture itself changes
 +        } else if (Chosen == Rows[2]) {
 +            GlobalConfig.FrostRadius = (GlobalConfig.FrostRadius >= 32) ? 0
 +                                       : GlobalConfig.FrostRadius + 4;
@@ -2813,12 +2986,11 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +            GlobalConfig.Tint = (GlobalConfig.Tint >= 100) ? 0 : GlobalConfig.Tint + 25;
 +        } else if (Chosen == Rows[4]) {
 +            GlobalConfig.Animations = !GlobalConfig.Animations;
++            NeedTheme = FALSE;               // nothing on the screen depends on it
 +        } else if (Chosen == Rows[5]) {
 +            Saved = SaveTheme();
++            NeedTheme = FALSE;               // the file changed, not the picture
 +        }
-+        if (Chosen != Rows[5])
-+            ApplyTheme();
-+        MarkScreenDirty();
 +    } // while
 +
 +    MyFreePool(List);
