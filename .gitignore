@@ -13,3 +13,6 @@ __pycache__/
 
 # renders made by library-preview.py
 library/.preview/
+
+# the virtual machine test-vm.sh builds
+vm/

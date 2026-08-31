@@ -60,6 +60,21 @@ choices made from the boot menu are never overwritten by a reinstall.
 
 ---
 
+## Before trusting a build
+
+```bash
+./test-vm.sh              # boot it in a virtual machine, photograph the screen
+./test-vm.sh --settings   # and open the settings screen while you are there
+```
+
+It builds a disk from what is on the real EFI partition, boots it under OVMF,
+takes a screenshot and pulls the boot log back out — `vm/shot.png` and
+`vm/refind.log`. It says plainly whether the menu drew.
+
+Needs `qemu-system-x86` and `ovmf`.
+
+---
+
 ## The splash
 
 `sudo ./install-plymouth.sh` replaces Ubuntu's spinner with the boot menu

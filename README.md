@@ -554,7 +554,22 @@ a silent pass-through, an interrupted boot leaves `recordfail=1` in `grubenv`
 and `/etc/grub.d/00_header` then forces a 30-second visible menu. Set
 `GRUB_RECORDFAIL_TIMEOUT=0`.
 
-**9. rEFInd's Makefile does not track header dependencies.** There is no `-MMD`
+**9. A loop that never ends on a negative number.** `SquareRoot()` starts with a
+bit above the answer and shifts down:
+
+```c
+INTN r = 0, b = 1 << 20;
+while (b > n) b >>= 2;
+```
+
+On a negative `n` that shifts `b` to zero, where `0 > n` is still true and the
+shift is still zero. The bootloader drew the background, hung before the menu,
+and sat there. The `n` went negative because sixty thousand weighted samples
+squared past what a 64-bit integer holds. Both are fixed — the guard and the
+normalisation — and `test-vm.sh` exists because of it: it found this in one run,
+against a reboot and a guess that found nothing.
+
+**10. rEFInd's Makefile does not track header dependencies.** There is no `-MMD`
 anywhere in it, so editing a header and running `make` rebuilds nothing that
 included it. Add a field to `REFIT_CONFIG` in `global.h`, rebuild without
 cleaning, and `config.c` gets the new layout while `main.c` — which *defines*
@@ -575,7 +590,7 @@ $ nm -S --defined-only refind/refind_x64.so | grep GlobalConfig
 diffing a binary built from a patched pristine tree against the installed one and
 chasing the one byte that was not the PE timestamp.
 
-**10. Config paths have two different bases.** `banner`, `font` and `selection_*`
+**11. Config paths have two different bases.** `banner`, `font` and `selection_*`
 are relative to the directory holding `refind_x64.efi`; `icon` inside a
 `menuentry` is absolute from the ESP root. Mixing them up fails **silently** —
 the file is simply never loaded.

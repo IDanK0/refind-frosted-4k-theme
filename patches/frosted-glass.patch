@@ -319,7 +319,7 @@ diff -ruN a/refind/launch_efi.c b/refind/launch_efi.c
      StartEFIImage(Entry->Volume, Entry->LoaderPath, Entry->LoadOptions,
 diff -ruN a/refind/main.c b/refind/main.c
 --- a/refind/main.c	2024-04-06 19:23:18.000000000 +0200
-+++ b/refind/main.c	2026-08-31 01:41:13.675872955 +0200
++++ b/refind/main.c	2026-08-31 01:55:33.190237587 +0200
 @@ -70,6 +70,7 @@
  #include "driver_support.h"
  #include "launch_efi.h"
@@ -339,7 +339,15 @@ diff -ruN a/refind/main.c b/refind/main.c
                              };
  
  CHAR16 *gHiddenTools = NULL;
-@@ -250,6 +251,9 @@
+@@ -237,6 +238,7 @@
+ // Rescan for boot loaders
+ VOID RescanAll(BOOLEAN DisplayMessage, BOOLEAN Reconnect) {
+     LOG(1, LOG_LINE_NORMAL, L"Re-scanning all boot loaders");
++    ThemeForgetIcons();      // before the entries it borrowed from go away
+     FreeList((VOID ***) &(MainMenu.Entries), &MainMenu.EntryCount);
+     MainMenu.Entries = NULL;
+     MainMenu.EntryCount = 0;
+@@ -250,6 +252,9 @@
      SetVolumeIcons();
      ScanForBootloaders(DisplayMessage);
      ScanForTools();
@@ -349,7 +357,7 @@ diff -ruN a/refind/main.c b/refind/main.c
  } // VOID RescanAll()
  
  #ifdef __MAKEWITH_TIANO
-@@ -525,6 +529,7 @@
+@@ -525,6 +530,7 @@
      SetVolumeIcons();
      ScanForBootloaders(FALSE);
      ScanForTools();
@@ -357,7 +365,7 @@ diff -ruN a/refind/main.c b/refind/main.c
  
      // SetupScreen() clears the screen; but ScanForBootloaders() may display a
      // message that must be deleted, so do so
-@@ -608,6 +613,10 @@
+@@ -608,6 +614,10 @@
                  ManageHiddenTags();
                  break;
  
@@ -1265,8 +1273,8 @@ diff -ruN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -ruN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-08-31 01:41:57.808500345 +0200
-@@ -0,0 +1,519 @@
++++ b/refind/theme.c	2026-08-31 02:04:35.542526959 +0200
+@@ -0,0 +1,565 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -1318,10 +1326,19 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +
 +static INTN AbsI(INTN x) { return (x < 0) ? -x : x; }
 +
++// Integer square root.
++//
++// The guard on the first line is not defensive dressing: without it a negative n
++// sends `while (b > n)` shifting b down to zero, where 0 > n is still true and
++// the loop never ends. That is a bootloader that hangs after drawing the
++// background and never gets as far as the menu, which is exactly what it did.
 +static INTN SquareRoot(INTN n) {
-+    INTN r = 0, b = 1 << 20;
++    INTN r = 0, b = ((INTN) 1) << 62;
 +
-+    while (b > n) b >>= 2;
++    if (n <= 0)
++        return 0;
++    while (b > n)
++        b >>= 2;
 +    while (b > 0) {
 +        if (n >= r + b) { n -= r + b; r = (r >> 1) + b; }
 +        else            { r >>= 1; }
@@ -1351,7 +1368,7 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +    UINTN     x, y, Step;
 +    INTN      Ax = 0, Ay = 0, Az = 0, dx, dy, dz, Len;
 +    INTN      r, g, b, Hi, Lo, Mid, c, v, w;
-+    INT64     Weight = 0, ChromaSum = 0;
++    INT64     Weight = 0, ChromaSum = 0, Count = 0;
 +    EG_PIXEL *P;
 +
 +    Dir[0] = Dir[1] = Dir[2] = 0;
@@ -1383,16 +1400,24 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +                continue;
 +            // the direction only: a vivid pixel and a pale one of the same hue
 +            // should agree, and it is the weight's job to say which counts more
-+            Ax += (dx * 1024 * w) / Len;
-+            Ay += (dy * 1024 * w) / Len;
-+            Az += (dz * 1024 * w) / Len;
++            Ax += (dx * w) / Len;
++            Ay += (dy * w) / Len;
++            Az += (dz * w) / Len;
++            Count++;
 +            Weight += w;
 +            ChromaSum += (INT64) c * w;
 +        } // for x
 +    } // for y
 +
-+    if (Weight < 1)
++    if ((Weight < 1) || (Count < 1))
 +        return;
++    // Bring the sums back down before squaring them. Sixty thousand samples of
++    // up to a few million each square to more than a 64-bit integer holds, and
++    // the wrap makes the length negative -- which used to be a hang and is now
++    // merely wrong, so it must not happen at all.
++    Ax = (INTN) (Ax / Count);
++    Ay = (INTN) (Ay / Count);
++    Az = (INTN) (Az / Count);
 +    Len = SquareRoot(Ax * Ax + Ay * Ay + Az * Az);
 +    if (Len < 1)
 +        return;
@@ -1502,7 +1527,14 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +    }
 +} // VOID DarkenImage()
 +
-+// Keep the artwork as it arrived, once, so every later tint starts from it.
++// Remember the artwork as it arrived, once, so every later tint starts from it.
++//
++// These are BORROWED, never owned. A tool's icon comes from BuiltinIcon(), which
++// hands back the pointer in its own cache rather than a copy -- and several
++// tools can be handed the same one. Freeing what is in an entry is therefore
++// freeing somebody else's image, twice over for a shared one, and a corrupted
++// heap turns every later allocation into a failure. Which is what emptied the
++// menu: every icon came back NULL and every tile drew as bare background.
 +static VOID KeepPristine(VOID) {
 +    UINTN i;
 +
@@ -1517,7 +1549,7 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +        return;
 +    }
 +    for (i = 0; i < PristineCount; i++)
-+        PristineIcons[i] = egCopyImage(MainMenu.Entries[i]->Image);
++        PristineIcons[i] = MainMenu.Entries[i]->Image;
 +} // VOID KeepPristine()
 +
 +//
@@ -1579,13 +1611,35 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +
 +    KeepPristine();
 +    for (i = 0; (i < PristineCount) && (i < MainMenu.EntryCount); i++) {
++        EG_IMAGE *Fresh;
++
 +        if (PristineIcons[i] == NULL)
 +            continue;
-+        egFreeImage(MainMenu.Entries[i]->Image);
-+        MainMenu.Entries[i]->Image = TintCopy(PristineIcons[i], GlobalConfig.Tint);
++        if (GlobalConfig.Tint == 0) {
++            Fresh = PristineIcons[i];              // the artwork as drawn
++        } else {
++            Fresh = TintCopy(PristineIcons[i], GlobalConfig.Tint);
++            if (Fresh == NULL)
++                continue;                          // leave what is there: an
++                                                   // entry must never lose its icon
++        }
++        // only ever free a copy this function made
++        if ((MainMenu.Entries[i]->Image != PristineIcons[i]) &&
++            (MainMenu.Entries[i]->Image != Fresh))
++            egFreeImage(MainMenu.Entries[i]->Image);
++        MainMenu.Entries[i]->Image = Fresh;
 +    }
 +    ResetTheming();
 +} // VOID ApplyTheme()
++
++// Let go of the borrowed icon pointers. RescanAll() frees every menu entry and
++// builds new ones, so anything remembered from before that is a pointer into
++// memory somebody else has handed back.
++VOID ThemeForgetIcons(VOID) {
++    MyFreePool(PristineIcons);
++    PristineIcons = NULL;
++    PristineCount = 0;
++} // VOID ThemeForgetIcons()
 +
 +// Reachable from menu.c, which owns the selection images and the spinner dot.
 +EG_IMAGE * ThemeTint(IN EG_IMAGE *Source) {
@@ -1788,8 +1842,8 @@ diff -ruN a/refind/theme.c b/refind/theme.c
 +} // VOID ShowSettingsMenu()
 diff -ruN a/refind/theme.h b/refind/theme.h
 --- a/refind/theme.h	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.h	2026-08-31 01:41:13.676206375 +0200
-@@ -0,0 +1,24 @@
++++ b/refind/theme.h	2026-08-31 01:55:33.190196592 +0200
+@@ -0,0 +1,27 @@
 +/*
 + * refind/theme.h
 + * Choosing and applying the look, from inside the boot menu.
@@ -1805,6 +1859,9 @@ diff -ruN a/refind/theme.h b/refind/theme.h
 +// the tool glyphs, the selection and the spinner. Safe to call repeatedly: the
 +// artwork is kept as it was loaded and tinted from that copy every time.
 +VOID ApplyTheme(VOID);
++
++// Forget the icons remembered from a menu that no longer exists.
++VOID ThemeForgetIcons(VOID);
 +
 +// The settings screen: background, dimming, glass, colour, animation, and a way
 +// to write the choices to EFI\refind\theme.conf so they survive a reboot.
