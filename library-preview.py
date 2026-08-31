@@ -34,10 +34,11 @@ def main():
         shot = os.path.join(work, f"{b['slug']}.png")
         build.preview(out, shot, ["os_win8", "os_ubuntu"], "Boot Windows", scale=(1920, 1080))
         bg = Image.open(os.path.join(out, "background.png"))
-        hue, sat = build.accent(bg)
+        direction, chroma = build.accent(bg)
+        hue = build.accent_hue(direction)
         logo = build.shades(bg, 1.0)["ramp"][153]     # where a logo's midtone lands
-        entries.append((b["name"], shot, hue * 360, sat * 100, logo))
-        print(f"  {b['name']:31s} hue {hue*360:5.0f}°  photo {sat*100:3.0f}%  logo {logo}")
+        entries.append((b["name"], shot, hue, chroma, logo))
+        print(f"  {b['name']:31s} hue {hue:5.0f}°  chroma {chroma:3d}  logo {logo}")
 
     cols  = 2
     rows  = (len(entries) + cols - 1) // cols
@@ -50,7 +51,7 @@ def main():
         sheet.paste(Image.open(shot).convert("RGB").resize(CELL, Image.LANCZOS), (x, y + HEAD))
         draw.text((x + 8, y + 4), name, font=bold, fill=(255, 200, 120))
         draw.text((x + 8, y + 23),
-                  f"hue {hue:.0f}°   photo saturation {sat:.0f}%   logo {logo}",
+                  f"hue {hue:.0f}°   chroma {sat}   logo {logo}",
                   font=plain, fill=(190, 190, 190))
     dst = os.path.join(SHOTS, "library.png")
     sheet.save(dst, optimize=True)

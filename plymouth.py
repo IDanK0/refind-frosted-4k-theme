@@ -18,8 +18,9 @@ from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from build import (apply_frost, W, H, TILE, TILE1, XSP, YSP, ICON_OFF,
-                   PLATE_X, PLATE_Y, PLATE, BIG, R0Y, FROST, SS, DOT_PX)
+from build import (apply_frost, duotone, shades, read_tint, W, H, TILE, TILE1,
+                   XSP, YSP, ICON_OFF, PLATE_X, PLATE_Y, PLATE, BIG, R0Y,
+                   FROST, SS, DOT_PX)
 
 NAME    = "refind-frosted"
 NDOTS   = 6            # Windows uses five; six closes the ring more evenly
@@ -78,15 +79,26 @@ def layout(icon):
 
 
 def still(assets, icon_path):
-    """The menu, drawn with a single entry: what the splash sits on."""
-    icon = Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
+    """The menu, drawn with a single entry: what the splash sits on.
+
+    The artwork on disk is neutral, because rEFInd colours it at boot. Plymouth
+    has no such moment -- its background is a finished picture -- so the same
+    colouring is done here, from the same photograph, or the splash would arrive
+    in different colours from the menu it is continuing."""
+    bg = Image.open(os.path.join(assets, "background.png")).convert("RGBA")
+    tint = read_tint(assets)
+    table = shades(bg, 1.0)["ramp"] if tint else None
+    def paint(path, size):
+        im = Image.open(path).convert("RGBA").resize((size, size), Image.LANCZOS)
+        return duotone(im, table, tint / 100.0) if tint else im
+
+    icon = paint(icon_path, BIG)
     r0x, r0y, _, _ = layout(icon)
     ix, iy = r0x + ICON_OFF, r0y + ICON_OFF
-    c = Image.open(os.path.join(assets, "background.png")).convert("RGBA")
+    c = bg
     apply_frost(c, Image.open(os.path.join(assets, "frost_big.png")).convert("RGBA"),
                 ix, iy, FROST)
-    c.alpha_composite(Image.open(os.path.join(assets, "selection_big.png")).convert("RGBA"),
-                      (r0x, r0y))
+    c.alpha_composite(paint(os.path.join(assets, "selection_big.png"), TILE), (r0x, r0y))
     c.alpha_composite(icon, (ix, iy))
     return c.convert("RGB")
 
@@ -97,9 +109,15 @@ def dot(assets=None):
     build.py writes it, because its colour is drawn from the photograph like
     every other colour in the theme. A white one drawn here would be the one
     thing on the screen that did not come from the picture."""
-    path = os.path.join(assets or os.path.join(HERE, "assets"), "dot.png")
+    root = assets or os.path.join(HERE, "assets")
+    path = os.path.join(root, "dot.png")
     if os.path.exists(path):
-        return Image.open(path).convert("RGBA")
+        im = Image.open(path).convert("RGBA")
+        tint = read_tint(root)
+        if tint:
+            bg = Image.open(os.path.join(root, "background.png")).convert("RGBA")
+            im = duotone(im, shades(bg, 1.0)["ramp"], tint / 100.0)
+        return im
     d = Image.new("RGBA", (DOT * SS, DOT * SS), (0, 0, 0, 0))
     ImageDraw.Draw(d).ellipse([0, 0, DOT * SS - 1, DOT * SS - 1], fill=(255, 255, 255, 255))
     return d.resize((DOT, DOT), Image.LANCZOS)
@@ -290,11 +308,16 @@ refresh_callback();
 Plymouth.SetRefreshFunction(refresh_callback);
 """
 
+# Every value here must be on ONE line. Plymouth's key-file reader has no notion
+# of continuations, so a Description wrapped onto a second line leaves that line
+# looking like a key with no "=", the group stops being read there, and
+# ModuleName -- which comes after it -- is never seen. Plymouth then loads
+# "(null).so", fails, and falls back to the text theme: a boot with no splash at
+# all, only console messages, and nothing anywhere saying why.
 THEME = """\
 [Plymouth Theme]
 Name={pretty}
-Description=The rEFInd boot menu, carried on into the splash: same photograph,
- same frosted panel, holding the system that was chosen.
+Description=The rEFInd boot menu carried on into the splash: the same photograph, the same frosted panel, holding the system that was chosen.
 ModuleName=script
 
 [script]
