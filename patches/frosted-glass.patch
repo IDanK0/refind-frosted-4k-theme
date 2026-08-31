@@ -179,7 +179,7 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
  BOOLEAN egSetTextMode(UINT32 RequestedMode);
 diff -urN a/libeg/screen.c b/libeg/screen.c
 --- a/libeg/screen.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/screen.c	2026-08-31 15:31:16.493243831 +0200
++++ b/libeg/screen.c	2026-08-31 17:21:48.593785196 +0200
 @@ -163,6 +163,69 @@
  // Stores the results in the file-global variables egScreenWidth,
  // egScreenHeight, and egHasGraphics. The first two of these will be
@@ -279,7 +279,32 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  
      if (GraphicsOutput != NULL) {
          // EFI_GRAPHICS_OUTPUT_BLT_PIXEL and EFI_UGA_PIXEL have the same
-@@ -518,17 +589,203 @@
+@@ -501,16 +572,14 @@
+        egComposeImage(CompImage, Image, 0, 0);
+     }
+ 
+-    if (GraphicsOutput != NULL) {
+-       refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput,
+-                            (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)CompImage->PixelData,
+-                            EfiBltBufferToVideo, 0, 0, ScreenPosX, ScreenPosY, CompImage->Width,
+-                            CompImage->Height, 0);
+-    } else if (UgaDraw != NULL) {
+-       refit_call10_wrapper(UgaDraw->Blt, UgaDraw, (EFI_UGA_PIXEL *)CompImage->PixelData,
+-                            EfiUgaBltBufferToVideo, 0, 0, ScreenPosX, ScreenPosY,
+-                            CompImage->Width, CompImage->Height, 0);
+-    }
++    // Everything drawn on this screen comes through here, so this is where the
++    // screen is written and where the mirror is kept. egDrawImageArea() below
++    // does both. (It had no callers at all until now: the fast write and the
++    // mirror were sitting in a function rEFInd never reached, which is why they
++    // changed nothing.)
++    egDrawImageArea(CompImage, 0, 0, CompImage->Width, CompImage->Height,
++                    ScreenPosX, ScreenPosY);
++
+     if ((CompImage != GlobalConfig.ScreenBackground) && (CompImage != Image))
+        egFreeImage(CompImage);
+ } /* VOID egDrawImage() */
+@@ -518,17 +587,207 @@
  // Display an unselected icon on the screen, so that the background image shows
  // through the transparency areas. The BadgeImage may be NULL, in which case
  // it's not composited in.
@@ -405,6 +430,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +// launched and came back from.
 +static EG_IMAGE *Shadow      = NULL;
 +static BOOLEAN   ShadowValid = FALSE;
++static BOOLEAN   ShadowUsed  = FALSE;
 +
 +VOID egForgetShadow(VOID) {
 +    ShadowValid = FALSE;
@@ -426,8 +452,11 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +    if (Shadow == NULL) {
 +        Shadow = egCreateImage(egScreenWidth, egScreenHeight, FALSE);
 +        ShadowValid = FALSE;
-+        if (Shadow == NULL)
++        if (Shadow == NULL) {
++            LOG(1, LOG_LINE_NORMAL,
++                L"No memory for the screen mirror: reads will go to the card");
 +            return;
++        }
 +    }
 +    if ((ScreenPosX + AreaWidth > egScreenWidth) ||
 +        (ScreenPosY + AreaHeight > egScreenHeight))
@@ -484,7 +513,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  VOID egDrawImageArea(IN EG_IMAGE *Image,
                       IN UINTN AreaPosX, IN UINTN AreaPosY,
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
-@@ -541,6 +798,12 @@
+@@ -541,6 +800,12 @@
      if (AreaWidth == 0)
          return;
  
@@ -497,7 +526,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      if (GraphicsOutput != NULL) {
          refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
                               EfiBltBufferToVideo, AreaPosX, AreaPosY, ScreenPosX, ScreenPosY, AreaWidth, AreaHeight,
-@@ -607,8 +870,21 @@
+@@ -607,8 +872,25 @@
          return NULL;
      }
  
@@ -505,6 +534,10 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +    if (ShadowValid && (Shadow != NULL) &&
 +        (XPos + Width <= Shadow->Width) && (YPos + Height <= Shadow->Height)) {
 +        UINTN y;
++        if (!ShadowUsed) {
++            ShadowUsed = TRUE;
++            LOG(1, LOG_LINE_NORMAL, L"Screen reads are coming from the mirror");
++        }
 +        for (y = 0; y < Height; y++)
 +            egCopyWide((UINT8 *) (Image->PixelData + y * Image->Width),
 +                       (UINT8 *) (Shadow->PixelData + (YPos + y) * Shadow->Width + XPos),

@@ -406,6 +406,20 @@ know. It is trusted only once a whole screen has passed through it, and dropped
 whenever something else might have drawn: text mode, or a program rEFInd
 launched and came back from.
 
+Which was written, measured in the virtual machine, and did nothing at all on
+the machine it was for — because both it and the fast write had been put inside
+`egDrawImageArea()`, and `egDrawImageArea()` had **no callers**. Everything
+rEFInd draws goes through `egDrawImage()`, which called the firmware's `Blt`
+directly. Two rounds of optimisation had been sitting in a function the program
+never reached.
+
+The log from the machine itself is what found it. Every full-screen paint landed
+at ~2970 ms after the keypress and the handoff took 1480 ms to draw its first
+frame — and 33 MB against 2.97 s, 14 MB against 1.48 s, is the same number both
+times: **11 MB/s**, which is a framebuffer being read, not a program being slow.
+`egDrawImage()` now goes through `egDrawImageArea()` like everything else, and
+the log says `Screen reads are coming from the mirror`.
+
 ### Answer first, then work
 
 Changing a setting means reading a photograph off the EFI partition, decoding
