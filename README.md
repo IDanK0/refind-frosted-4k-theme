@@ -387,6 +387,38 @@ resolution it settles on. If the firmware has no such protocol or refuses — OV
 answers "Out of Resources", having spent its registers already — nothing changes
 and nothing breaks.
 
+### Nothing is ever read back
+
+A framebuffer is quick to write and desperately slow to read. A write is posted
+and forgotten; a read is a round trip to the card that nothing can buffer. And
+the code read from it constantly without anybody noticing: `BltClearScreen()`
+ends with `egCopyScreen()`, a whole screen back off the card on every repaint,
+and the cross-fade on the way to an operating system began by reading back the
+band the menu lives in — thirteen megabytes — before it could draw its first
+frame. That read *is* the pause between pressing Enter and seeing anything
+happen.
+
+So the screen is mirrored in ordinary memory: every write goes through
+`egShadowNote()` as well as to the card, and `egCopyScreenArea()` reads the
+mirror. The mirror costs one copy at memory speed, which is beneath noticing,
+and it is exact — it holds what was drawn, which is what the reader wanted to
+know. It is trusted only once a whole screen has passed through it, and dropped
+whenever something else might have drawn: text mode, or a program rEFInd
+launched and came back from.
+
+### Answer first, then work
+
+Changing a setting means reading a photograph off the EFI partition, decoding
+eight million pixels of JPEG and dimming all of them. Doing that before drawing
+anything leaves the screen still from the keypress until the work is finished,
+which reads as the machine having missed the key.
+
+So the panel goes up first, with the new value already in it, and the
+photograph follows when it is ready. And the work itself is only done when it is
+needed: toggling animations changes nothing on the screen, saving to disk
+changes nothing on the screen, and only a new photograph or a new dimming needs
+the whole screen back — the other rows repaint a pane, not eight million pixels.
+
 ### Time, not frames
 
 An animation used to be counted in frames: draw one, wait 10 ms, draw the next.
