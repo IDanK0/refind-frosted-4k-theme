@@ -17,6 +17,8 @@ diff -urN a/EfiLib/gnuefi-helper.c b/EfiLib/gnuefi-helper.c
  
  /**
    Determine whether a given device path is valid.
+I file binari a/EfiLib/libEfiLib.a e b/EfiLib/libEfiLib.a sono diversi
+I file binari a/gzip/libgzip.a e b/gzip/libgzip.a sono diversi
 diff -urN a/libeg/image.c b/libeg/image.c
 --- a/libeg/image.c	2024-04-04 00:04:55.000000000 +0200
 +++ b/libeg/image.c	2026-08-31 14:20:01.913780424 +0200
@@ -147,6 +149,7 @@ diff -urN a/libeg/image.c b/libeg/image.c
  VOID egRawCompose(IN OUT EG_PIXEL *CompBasePtr, IN EG_PIXEL *TopBasePtr,
                    IN UINTN Width, IN UINTN Height,
                    IN UINTN CompLineOffset, IN UINTN TopLineOffset)
+I file binari a/libeg/libeg.a e b/libeg/libeg.a sono diversi
 diff -urN a/libeg/libeg.h b/libeg/libeg.h
 --- a/libeg/libeg.h	2024-01-28 19:51:20.000000000 +0100
 +++ b/libeg/libeg.h	2026-08-30 18:43:56.375084899 +0200
@@ -169,8 +172,86 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
 diff -urN a/libeg/screen.c b/libeg/screen.c
 --- a/libeg/screen.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/screen.c	2026-08-31 14:04:26.582558578 +0200
-@@ -518,17 +518,65 @@
++++ b/libeg/screen.c	2026-08-31 15:06:53.195970394 +0200
+@@ -163,6 +163,69 @@
+ // Stores the results in the file-global variables egScreenWidth,
+ // egScreenHeight, and egHasGraphics. The first two of these will be
+ // unchanged if neither GraphicsOutput nor UgaDraw is a valid pointer.
++// Make the framebuffer fast to write.
++//
++// The firmware decides how the processor may cache the framebuffer, and a great
++// many of them leave it uncacheable. Uncacheable means every store goes to the
++// card on its own, one at a time, with no write buffering: a full 3840x2160
++// screen is 33 MB, and at those speeds putting one up takes long enough to watch
++// it happen from the top of the screen to the bottom. That wipe is not an
++// effect. It is the memory type.
++//
++// Write-combining is the memory type framebuffers are meant to have: stores are
++// gathered in the processor and sent as whole bursts. It is what every operating
++// system sets on the same memory once it takes over, and it is a ten-fold
++// difference on real hardware. The CPU architectural protocol is how a UEFI
++// program asks for it. If the firmware does not offer that protocol, or refuses,
++// nothing changes and nothing breaks -- the screen is simply as slow as it was.
++#define EFI_MEMORY_WC_ATTR  ((UINT64) 0x0000000000000002ULL)
++
++typedef struct _REFIND_CPU_ARCH_PROTOCOL REFIND_CPU_ARCH_PROTOCOL;
++struct _REFIND_CPU_ARCH_PROTOCOL {
++    VOID       *FlushDataCache;
++    VOID       *EnableInterrupt;
++    VOID       *DisableInterrupt;
++    VOID       *GetInterruptState;
++    VOID       *Init;
++    VOID       *RegisterInterruptHandler;
++    VOID       *GetTimerValue;
++    EFI_STATUS (EFIAPI *SetMemoryAttributes)(IN REFIND_CPU_ARCH_PROTOCOL *This,
++                                             IN EFI_PHYSICAL_ADDRESS BaseAddress,
++                                             IN UINT64 Length,
++                                             IN UINT64 Attributes);
++    UINT32      NumberOfTimers;
++    UINT32      DmaBufferAlignment;
++};
++
++static EFI_GUID CpuArchProtocolGuid = { 0x26baccb1, 0x6f42, 0x11d4,
++                                        { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 }};
++
++static UINT64 FastenedBase = 0;
++
++static VOID egSpeedUpFrameBuffer(VOID) {
++    REFIND_CPU_ARCH_PROTOCOL *Cpu = NULL;
++    EFI_STATUS                Status;
++    UINT64                    Size;
++
++    if ((GraphicsOutput == NULL) || (GraphicsOutput->Mode == NULL))
++        return;
++    if (GraphicsOutput->Mode->FrameBufferBase == 0)
++        return;
++    if (GraphicsOutput->Mode->FrameBufferBase == FastenedBase)
++        return;                     // asked already; the mode has not changed
++    FastenedBase = GraphicsOutput->Mode->FrameBufferBase;
++    Size = (UINT64) GraphicsOutput->Mode->FrameBufferSize;
++    if (Size == 0)
++        return;
++    Status = LibLocateProtocol(&CpuArchProtocolGuid, (VOID **) &Cpu);
++    if (EFI_ERROR(Status) || (Cpu == NULL) || (Cpu->SetMemoryAttributes == NULL))
++        return;
++    Status = refit_call4_wrapper(Cpu->SetMemoryAttributes, Cpu,
++                                 GraphicsOutput->Mode->FrameBufferBase,
++                                 Size, EFI_MEMORY_WC_ATTR);
++    LOG(1, LOG_LINE_NORMAL, L"Framebuffer write-combining: %r", Status);
++} // VOID egSpeedUpFrameBuffer()
++
+ static VOID egDetermineScreenSize(VOID) {
+     EFI_STATUS Status = EFI_SUCCESS;
+     UINT32 UGAWidth, UGAHeight, UGADepth, UGARefreshRate;
+@@ -173,6 +236,7 @@
+         egScreenWidth = GraphicsOutput->Mode->Info->HorizontalResolution;
+         egScreenHeight = GraphicsOutput->Mode->Info->VerticalResolution;
+         egHasGraphics = TRUE;
++        egSpeedUpFrameBuffer();
+     } else if (UgaDraw != NULL) {
+         Status = refit_call5_wrapper(UgaDraw->GetMode, UgaDraw, &UGAWidth, &UGAHeight, &UGADepth, &UGARefreshRate);
+         if (EFI_ERROR(Status)) {
+@@ -518,17 +582,128 @@
  // Display an unselected icon on the screen, so that the background image shows
  // through the transparency areas. The BadgeImage may be NULL, in which case
  // it's not composited in.
@@ -204,13 +285,45 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +// Everything is checked before taking this path: the format, that there is a
 +// framebuffer address at all, and that the rectangle is inside the screen. When
 +// any of it does not hold, the firmware's own Blt() is used exactly as before.
-+static BOOLEAN egDirectDraw(IN EG_IMAGE *Image,
-+                            IN UINTN AreaPosX, IN UINTN AreaPosY,
-+                            IN UINTN AreaWidth, IN UINTN AreaHeight,
-+                            IN UINTN ScreenPosX, IN UINTN ScreenPosY) {
-+    UINT8 *Base;
-+    UINTN  Stride, y;
++// A copy that moves eight bytes at a time.
++//
++// gnu-efi's CopyMem() ends in a memcpy() that is a byte-at-a-time loop: load a
++// byte, store a byte, increment, compare. Against ordinary memory that is
++// eleven times slower than it needs to be. Against a framebuffer it is far
++// worse than that, because a framebuffer is not ordinary memory: every store
++// leaves the processor for the graphics card, and one byte per journey means
++// 33 million journeys to put up a single 3840x2160 screen. That is the wipe
++// from the top of the screen to the bottom, and it is measured in seconds.
++//
++// Eight bytes per store is eight times fewer journeys. rEFInd is built with
++// -fno-tree-loop-distribute-patterns, so the compiler leaves this loop alone
++// rather than turning it back into the memcpy() it came from.
++static VOID egCopyWide(OUT UINT8 *Dest, IN UINT8 *Src, IN UINTN Count) {
++    UINTN i, Whole;
 +
++    if ((((UINTN) Dest | (UINTN) Src) & 7) == 0) {
++        UINT64 *D = (UINT64 *) Dest, *S = (UINT64 *) Src;
++        Whole = Count >> 3;
++        for (i = 0; i < Whole; i++)
++            D[i] = S[i];
++        i = Whole << 3;
++    } else {
++        // pixels are always four-byte aligned even when the row start is not
++        UINT32 *D = (UINT32 *) Dest, *S = (UINT32 *) Src;
++        Whole = Count >> 2;
++        for (i = 0; i < Whole; i++)
++            D[i] = S[i];
++        i = Whole << 2;
++    }
++    for (; i < Count; i++)
++        Dest[i] = Src[i];
++} // VOID egCopyWide()
++
++// May this area be reached by touching the framebuffer directly? Only when the
++// firmware laid the screen out the way EG_IMAGE already stores pixels, and only
++// inside the screen.
++static BOOLEAN egFrameBufferUsable(IN UINTN Width, IN UINTN Height,
++                                   IN UINTN ScreenPosX, IN UINTN ScreenPosY) {
 +    if ((GraphicsOutput == NULL) || (GraphicsOutput->Mode == NULL) ||
 +        (GraphicsOutput->Mode->Info == NULL))
 +        return FALSE;
@@ -220,24 +333,55 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +        return FALSE;
 +    if (GraphicsOutput->Mode->Info->PixelsPerScanLine < egScreenWidth)
 +        return FALSE;
-+    if ((ScreenPosX + AreaWidth > egScreenWidth) ||
-+        (ScreenPosY + AreaHeight > egScreenHeight))
++    if ((ScreenPosX + Width > egScreenWidth) ||
++        (ScreenPosY + Height > egScreenHeight))
++        return FALSE;
++    return TRUE;
++} // BOOLEAN egFrameBufferUsable()
++
++static BOOLEAN egDirectDraw(IN EG_IMAGE *Image,
++                            IN UINTN AreaPosX, IN UINTN AreaPosY,
++                            IN UINTN AreaWidth, IN UINTN AreaHeight,
++                            IN UINTN ScreenPosX, IN UINTN ScreenPosY) {
++    UINT8 *Base;
++    UINTN  Stride, y;
++
++    if (!egFrameBufferUsable(AreaWidth, AreaHeight, ScreenPosX, ScreenPosY))
 +        return FALSE;
 +
 +    Stride = (UINTN) GraphicsOutput->Mode->Info->PixelsPerScanLine * 4;
 +    Base   = (UINT8 *) (UINTN) GraphicsOutput->Mode->FrameBufferBase;
 +    for (y = 0; y < AreaHeight; y++) {
-+        CopyMem(Base + (ScreenPosY + y) * Stride + ScreenPosX * 4,
-+                (UINT8 *) (Image->PixelData + (AreaPosY + y) * Image->Width + AreaPosX),
-+                AreaWidth * 4);
++        egCopyWide(Base + (ScreenPosY + y) * Stride + ScreenPosX * 4,
++                   (UINT8 *) (Image->PixelData + (AreaPosY + y) * Image->Width + AreaPosX),
++                   AreaWidth * 4);
 +    }
 +    return TRUE;
 +} // BOOLEAN egDirectDraw()
 +
++// The same road in the other direction. Reading the screen back is what the
++// cross-fades do to find out what they are fading from, and the firmware's own
++// read is a pixel at a time.
++static BOOLEAN egDirectRead(IN OUT EG_IMAGE *Image, IN UINTN XPos, IN UINTN YPos) {
++    UINT8 *Base;
++    UINTN  Stride, y;
++
++    if (!egFrameBufferUsable(Image->Width, Image->Height, XPos, YPos))
++        return FALSE;
++    Stride = (UINTN) GraphicsOutput->Mode->Info->PixelsPerScanLine * 4;
++    Base   = (UINT8 *) (UINTN) GraphicsOutput->Mode->FrameBufferBase;
++    for (y = 0; y < Image->Height; y++) {
++        egCopyWide((UINT8 *) (Image->PixelData + y * Image->Width),
++                   Base + (YPos + y) * Stride + XPos * 4,
++                   Image->Width * 4);
++    }
++    return TRUE;
++} // BOOLEAN egDirectRead()
++
  VOID egDrawImageArea(IN EG_IMAGE *Image,
                       IN UINTN AreaPosX, IN UINTN AreaPosY,
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
-@@ -541,6 +589,10 @@
+@@ -541,6 +716,10 @@
      if (AreaWidth == 0)
          return;
  
@@ -248,6 +392,17 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      if (GraphicsOutput != NULL) {
          refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
                               EfiBltBufferToVideo, AreaPosX, AreaPosY, ScreenPosX, ScreenPosY, AreaWidth, AreaHeight,
+@@ -608,7 +787,9 @@
+     }
+ 
+     // get full screen image
+-    if (GraphicsOutput != NULL) {
++    if (egDirectRead(Image, XPos, YPos)) {
++        return Image;
++    } else if (GraphicsOutput != NULL) {
+         refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput,
+                              (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
+                              EfiBltVideoToBltBuffer, XPos, YPos, 0, 0,
 diff -urN a/Make.common b/Make.common
 --- a/Make.common	2024-04-06 19:05:14.000000000 +0200
 +++ b/Make.common	2026-08-30 18:14:51.605763246 +0200
@@ -269,6 +424,7 @@ diff -urN a/Make.common b/Make.common
  FORMAT_DRIVER   = --target=efi-bsdrv-$(ARCH)
  
  #
+I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -urN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
 +++ b/refind/config.c	2026-08-31 14:03:04.598580200 +0200
@@ -456,7 +612,7 @@ diff -urN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-31 14:20:01.917516111 +0200
++++ b/refind/menu.c	2026-08-31 15:01:53.367958577 +0200
 @@ -59,6 +59,7 @@
  #include "screen.h"
  #include "lib.h"
@@ -597,7 +753,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1122,262 @@
+@@ -1074,31 +1122,341 @@
  // graphical main menu style
  //
  
@@ -630,6 +786,60 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// Is the user already ahead of us?
 +static BOOLEAN KeyIsWaiting(VOID) {
 +    return (refit_call1_wrapper(BS->CheckEvent, ST->ConIn->WaitForKey) == EFI_SUCCESS);
++}
++
++// A clock, in microseconds.
++//
++// Animation used to be counted in frames: draw one, wait 10 ms, draw the next.
++// That is only the same thing as time on a machine where drawing is free. It is
++// not: at 3840x2160 the firmware's framebuffer is memory the processor cannot
++// cache, and a frame can take longer to appear than the pause that follows it.
++// Counting frames on such a machine stretches every animation -- half the speed,
++// twice the length -- and that is exactly what "laggy" means.
++//
++// So ask the processor what time it is. TSC is a plain counter of cycles; how
++// many of them make a microsecond is learned once, from a stall of known length.
++// Every animation then runs for the time it is supposed to take, drawing however
++// many frames fit -- fewer on a slow display, more on a fast one, the same
++// duration on both.
++static UINT64 TicksPerUs = 0;
++
++static UINT64 ReadTicks(VOID) {
++    UINT32 Low, High;
++    __asm__ __volatile__ ("rdtsc" : "=a" (Low), "=d" (High));
++    return ((UINT64) High << 32) | (UINT64) Low;
++}
++
++static VOID StartClock(VOID) {
++    UINT64 Before, After;
++
++    if (TicksPerUs != 0)
++        return;
++    Before = ReadTicks();
++    refit_call1_wrapper(BS->Stall, 20000);          // 20 ms is enough to divide by
++    After  = ReadTicks();
++    TicksPerUs = (After - Before) / 20000;
++    if (TicksPerUs == 0)
++        TicksPerUs = 1;                             // no clock: every frame is "now"
++}
++
++static UINT64 NowUs(VOID) {
++    if (TicksPerUs == 0)
++        StartClock();               // never answer 0 forever: that is a loop
++    return ReadTicks() / TicksPerUs;
++}
++
++// Wait until the frame's slot is up, so a fast machine does not spin the whole
++// animation past in three frames. Returns FALSE when the animation should stop.
++static BOOLEAN HoldFrame(IN UINT64 FrameStart, IN UINTN LeastUs) {
++    UINT64 Spent;
++
++    if (KeyIsWaiting())
++        return FALSE;
++    Spent = NowUs() - FrameStart;
++    if (Spent < LeastUs)
++        refit_call1_wrapper(BS->Stall, (UINTN) (LeastUs - Spent));
++    return TRUE;
 +}
 +
 +// Step t of n, eased so it leaves quickly and arrives gently. Returns 0..256.
@@ -790,7 +1000,8 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +                          IN UINTN *itemPosX, IN UINTN row0PosY, IN UINTN row1PosY) {
 +    EG_IMAGE *Tile[ANIM_MAX_TILES], *Back[ANIM_MAX_TILES];
 +    UINTN     X[ANIM_MAX_TILES], Y[ANIM_MAX_TILES];
-+    UINTN     Count = 0, f, i, Alpha, Start;
++    UINTN     Count = 0, f, i, Alpha, Start, Steps;
++    UINT64    Began, Span;
 +    INTN      e;
 +
 +    for (e = State->FirstVisible; (e <= State->MaxIndex) && (Count < ANIM_MAX_TILES); e++) {
@@ -816,14 +1027,25 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        Count++;
 +    }
 +
-+    for (f = 1; (f <= ANIM_IN_FRAMES + Count) && !KeyIsWaiting(); f++) {
++    Steps = ANIM_IN_FRAMES + Count;
++    Span  = (UINT64) Steps * ANIM_FRAME_US;
++    Began = NowUs();
++    for (;;) {
++        UINT64 FrameAt = NowUs();
++        UINT64 Gone    = FrameAt - Began;
++        if (Gone >= Span)
++            break;
++        f = 1 + (UINTN) ((Gone * Steps) / Span);
 +        for (i = 0; i < Count; i++) {
 +            Start = i;
 +            Alpha = (f > Start) ? EaseOut(f - Start, ANIM_IN_FRAMES) : 0;
 +            BlendBlit(Back[i], Tile[i], Alpha, X[i], Y[i]);
 +        }
-+        refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++        if (!HoldFrame(FrameAt, ANIM_FRAME_US))
++            break;
 +    }
++    for (i = 0; i < Count; i++)          // whatever the timing did, end whole
++        BltImage(Tile[i], X[i], Y[i]);
 +    for (i = 0; i < Count; i++) {
 +        egFreeImage(Tile[i]);
 +        egFreeImage(Back[i]);
@@ -837,6 +1059,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +                             IN REFIT_MENU_ENTRY *New, IN UINTN NX, IN UINTN NY) {
 +    EG_IMAGE *WasOld, *WasNew, *ToOld, *ToNew;
 +    UINTN     f, Alpha;
++    UINT64    Began, Span;
 +
 +    ToOld = ComposeMenuEntry(Old, FALSE, OX, OY);
 +    ToNew = ComposeMenuEntry(New, TRUE,  NX, NY);
@@ -844,13 +1067,25 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        if (ToOld != NULL) BltImage(ToOld, OX, OY);
 +        if (ToNew != NULL) BltImage(ToNew, NX, NY);
 +    } else {
-+        WasOld = egCopyScreenArea(OX, OY, ToOld->Width, ToOld->Height);
-+        WasNew = egCopyScreenArea(NX, NY, ToNew->Width, ToNew->Height);
-+        for (f = 1; (f <= ANIM_SEL_FRAMES) && !KeyIsWaiting(); f++) {
++        // What is on the screen is the same two tiles the other way round, and
++        // composing them costs nothing now that the glass is kept. Reading them
++        // back off the screen does not: a framebuffer is quick to write and slow
++        // to read, and this ran on every press of an arrow key.
++        WasOld = ComposeMenuEntry(Old, TRUE,  OX, OY);
++        WasNew = ComposeMenuEntry(New, FALSE, NX, NY);
++        Span  = (UINT64) ANIM_SEL_FRAMES * ANIM_FRAME_US;
++        Began = NowUs();
++        for (;;) {
++            UINT64 FrameAt = NowUs();
++            UINT64 Gone    = FrameAt - Began;
++            if (Gone >= Span)
++                break;
++            f = 1 + (UINTN) ((Gone * ANIM_SEL_FRAMES) / Span);
 +            Alpha = EaseOut(f, ANIM_SEL_FRAMES);
 +            BlendBlit(WasOld, ToOld, Alpha, OX, OY);
 +            BlendBlit(WasNew, ToNew, Alpha, NX, NY);
-+            refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++            if (!HoldFrame(FrameAt, ANIM_FRAME_US))
++                break;
 +        }
 +        BltImage(ToOld, OX, OY);
 +        BltImage(ToNew, NX, NY);
@@ -874,7 +1109,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1429,8 @@
+@@ -1150,10 +1508,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -887,7 +1122,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1451,346 @@
+@@ -1174,6 +1530,372 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -1052,6 +1287,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    EG_IMAGE *Strip, *StripBg, *Held, *Tile, *Box, *Rest;
 +    UINTN     Size, StripY, StripH, f, Alpha, BoxX, BoxY, BoxW, BoxH;
 +    UINTN     InkX, InkY, InkW, InkH;
++    UINT64    Began, Span;
 +    INTN      FromX, FromY, X, Y, PrevX, PrevY;
 +
 +    Size   = TileSizes[0];
@@ -1082,12 +1318,22 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    }
 +    Held    = egCopyScreenArea(ChosenX, ChosenY, Size, Size);
 +    if ((Strip != NULL) && (StripBg != NULL) && (Held != NULL)) {
-+        for (f = 1; f <= ANIM_OUT_FRAMES; f++) {
++        Span  = (UINT64) ANIM_OUT_FRAMES * ANIM_FRAME_US;
++        Began = NowUs();
++        for (;;) {
++            UINT64 FrameAt = NowUs();
++            UINT64 Gone    = FrameAt - Began;
++            if (Gone >= Span)
++                break;
++            f = 1 + (UINTN) ((Gone * ANIM_OUT_FRAMES) / Span);
 +            Alpha = EaseOut(f, ANIM_OUT_FRAMES);
 +            BlendBlit(Strip, StripBg, Alpha, InkX, StripY + InkY);
 +            BltImage(Held, ChosenX, ChosenY);
-+            refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++            if (!HoldFrame(FrameAt, ANIM_FRAME_US))
++                break;
 +        }
++        BltImage(StripBg, InkX, StripY + InkY);
++        BltImage(Held, ChosenX, ChosenY);
 +    }
 +    egFreeImage(Strip);
 +    egFreeImage(StripBg);
@@ -1106,7 +1352,14 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    // 2. the tile travels
 +    FromX = (INTN) ChosenX; FromY = (INTN) ChosenY;
 +    PrevX = FromX;          PrevY = FromY;
-+    for (f = 1; f <= ANIM_MOVE_FRAMES; f++) {
++    Span  = (UINT64) ANIM_MOVE_FRAMES * ANIM_FRAME_US;
++    Began = NowUs();
++    for (;;) {
++        UINT64 FrameAt = NowUs();
++        UINT64 Gone    = FrameAt - Began;
++        if (Gone >= Span)
++            break;
++        f = 1 + (UINTN) ((Gone * ANIM_MOVE_FRAMES) / Span);
 +        Alpha = EaseOut(f, ANIM_MOVE_FRAMES);
 +        X = FromX + (((INTN) DestX - FromX) * (INTN) Alpha) / 256;
 +        Y = FromY + (((INTN) DestY - FromY) * (INTN) Alpha) / 256;
@@ -1125,7 +1378,8 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        egFreeImage(Box);
 +        egFreeImage(Tile);
 +        PrevX = X; PrevY = Y;
-+        refit_call1_wrapper(BS->Stall, ANIM_FRAME_US);
++        if (!HoldFrame(FrameAt, ANIM_FRAME_US))
++            break;
 +    }
 +} // VOID AnimateHandoff()
 +
@@ -1135,6 +1389,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +VOID ShowHandoffSplash(IN EG_IMAGE *Icon) {
 +    EG_IMAGE *Tile, *Dot, *Band, *Loaded;
 +    UINTN     Elapsed = 0, Ring, DotSize, Span, TileX, BandX, BandY, d;
++    UINT64    Began;
 +    INTN      Theta, Angle, TileY, CentreY, GroupTop, GroupBottom, Shift;
 +
 +    if ((GlobalConfig.HandoffSplash == 0) || !AllowGraphicsMode ||
@@ -1155,8 +1410,12 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    // the top from the icon's own alpha keeps that true for an icon with a
 +    // longer name, or with none.
 +    TileX   = (UGAWidth + TILE_XSPACING - (TileSizes[0] + TILE_XSPACING)) / 2;
-+    Ring    = (110 * UGAHeight) / 2160;
-+    DotSize = (20 * UGAHeight) / 2160;
++    // 140px across at 3840x2160 -- 6.5% of the height, the size Windows draws
++    // its spinner. It was 10% before, which reads as a hoop rather than a
++    // spinner. plymouth.py carries the same two numbers so the ring rEFInd
++    // turns and the ring the system turns after it are one ring.
++    Ring    = (70 * UGAHeight) / 2160;
++    DotSize = (13 * UGAHeight) / 2160;
 +    if (DotSize < 4)
 +        DotSize = 4;
 +
@@ -1204,7 +1463,9 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        Dot = MakeDot(DotSize);
 +
 +    if ((Dot != NULL) && (BandY + Span <= UGAHeight)) {
++        Began = NowUs();
 +        while (Elapsed < GlobalConfig.HandoffSplash) {
++            UINT64 FrameAt = NowUs();
 +            // repaint the whole band from the untouched photograph, so the dots
 +            // leave nothing behind them
 +            Band = egCropImage(GlobalConfig.ScreenBackground, BandX, BandY, Span, Span);
@@ -1224,8 +1485,8 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +            }
 +            BltImage(Band, BandX, BandY);
 +            egFreeImage(Band);
-+            refit_call1_wrapper(BS->Stall, SPIN_FRAME * 1000);
-+            Elapsed += SPIN_FRAME;
++            HoldFrame(FrameAt, SPIN_FRAME * 1000);      // never skip the ring
++            Elapsed = (UINTN) ((NowUs() - Began) / 1000);
 +        }
 +    }
 +    egFreeImage(Dot);
@@ -1234,7 +1495,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1804,7 @@
+@@ -1187,7 +1909,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -1243,7 +1504,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2077,7 @@
+@@ -1460,7 +2182,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -1252,7 +1513,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2155,7 @@
+@@ -1538,7 +2260,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -1261,7 +1522,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2257,7 @@
+@@ -1640,7 +2362,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -1270,7 +1531,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2295,7 @@
+@@ -1678,7 +2400,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -1279,7 +1540,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2317,7 @@
+@@ -1700,7 +2422,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -1288,7 +1549,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2406,7 @@
+@@ -1789,7 +2511,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -1297,7 +1558,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2431,7 @@
+@@ -1814,7 +2536,7 @@
      }
  
      if (AllowGraphicsMode) {
@@ -1607,8 +1868,8 @@ diff -urN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -urN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-08-31 14:20:01.917669911 +0200
-@@ -0,0 +1,989 @@
++++ b/refind/theme.c	2026-08-31 14:54:58.027667342 +0200
+@@ -0,0 +1,962 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -2079,10 +2340,8 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +#define PANEL_HAIR   (150)    // the hairline just inside the top
 +#define PANEL_PAD_X  (3)      // padding, in font cells
 +#define PANEL_PAD_Y  (1)      // padding, in text lines
-+#define PANEL_FADE   (4)
 +
 +static UINTN PanelX, PanelY, PanelW, PanelH, RowH, RowTop, RowsCount;
-+static EG_IMAGE *PanelShown = NULL;
 +// The frosted glass under the panel depends only on its geometry and on the
 +// background, so it survives keypresses.  Rebuilding it each time meant
 +// re-frosting over a million pixels to move a highlight one row.
@@ -2273,8 +2532,8 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +// piece. Drawing it in parts is what makes a menu flicker; this way the screen
 +// changes once.
 +static VOID PaintPanel(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State) {
-+    EG_IMAGE *Panel, *Bar, *Mix;
-+    UINTN     i, y, cw, tw, n, Alpha, f;
++    EG_IMAGE *Panel, *Bar;
++    UINTN     i, y, cw, tw;
 +    INTN      e;
 +
 +    Panel = MakePanel();
@@ -2309,33 +2568,12 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    }
 +    egFreeImage(Bar);
 +
-+    // Cross-fade from whatever was there, so the highlight slides rather than
-+    // snaps. Skipped the moment a key is already waiting.
-+    if (GlobalConfig.Animations && (PanelShown != NULL) &&
-+        (PanelShown->Width == PanelW) && (PanelShown->Height == PanelH) &&
-+        (refit_call1_wrapper(BS->CheckEvent, ST->ConIn->WaitForKey) != EFI_SUCCESS)) {
-+        Mix = egCreateImage(PanelW, PanelH, FALSE);
-+        if (Mix != NULL) {
-+            n = PanelW * PanelH;
-+            for (f = 1; f <= PANEL_FADE; f++) {
-+                Alpha = (256 * f) / PANEL_FADE;
-+                for (i = 0; i < n; i++) {
-+                    Mix->PixelData[i].r = (UINT8) (((UINTN) PanelShown->PixelData[i].r * (256 - Alpha) +
-+                                                    (UINTN) Panel->PixelData[i].r * Alpha) >> 8);
-+                    Mix->PixelData[i].g = (UINT8) (((UINTN) PanelShown->PixelData[i].g * (256 - Alpha) +
-+                                                    (UINTN) Panel->PixelData[i].g * Alpha) >> 8);
-+                    Mix->PixelData[i].b = (UINT8) (((UINTN) PanelShown->PixelData[i].b * (256 - Alpha) +
-+                                                    (UINTN) Panel->PixelData[i].b * Alpha) >> 8);
-+                }
-+                BltImage(Mix, PanelX, PanelY);
-+                refit_call1_wrapper(BS->Stall, 9000);
-+            }
-+            egFreeImage(Mix);
-+        }
-+    }
++    // Straight up, with no cross-fade. Moving between two settings is not a
++    // transition worth watching: it is a thing you do six times in a row, and a
++    // fade in front of every one of them costs a full pane of arithmetic and a
++    // full pane pushed at the screen, per frame, to move a bar one row.
 +    BltImage(Panel, PanelX, PanelY);
-+    egFreeImage(PanelShown);
-+    PanelShown = Panel;
++    egFreeImage(Panel);
 +} // VOID PaintPanel()
 +
 +// The style every sub-menu is drawn with: settings, about, hidden tags, the
@@ -2380,13 +2618,9 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +            PanelX = (UGAWidth  - PanelW) / 2;
 +            PanelY = (UGAHeight - PanelH) / 2;
 +            SwitchToGraphicsAndClear();
-+            egFreeImage(PanelShown);
-+            PanelShown = NULL;
 +            break;
 +
 +        case MENU_FUNCTION_CLEANUP:
-+            egFreeImage(PanelShown);
-+            PanelShown = NULL;
 +            break;
 +
 +        case MENU_FUNCTION_PAINT_ALL:

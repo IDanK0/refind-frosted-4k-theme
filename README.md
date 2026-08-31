@@ -345,16 +345,64 @@ expensive thing here, so the tiles keep the last twelve in a cache keyed on
 position, and the settings panel keeps its glass — moving the highlight one row
 used to re-blur 1.26 million pixels to draw a bar 40 pixels tall.
 
-Underneath all of it, `egDirectDraw()` writes rows straight into
-`GraphicsOutput->Mode->FrameBufferBase` with `CopyMem` when the mode is 32-bit
+Underneath all of it, `egDirectDraw()` and `egDirectRead()` move rows straight
+in and out of `GraphicsOutput->Mode->FrameBufferBase` when the mode is 32-bit
 BGRX, falling back to the firmware's own `Blt` for anything else. The firmware
-call is a general-purpose routine that has to cope with any pixel format and any
-overlap; when the format is already the one `EG_IMAGE` uses, the copy is a
-`memcpy` per row and the firmware is not involved at all.
+call is a general-purpose routine that copes with any pixel format; when the
+format is already the one `EG_IMAGE` uses, a row is a copy and the firmware is
+not involved at all.
+
+### One byte at a time
+
+Which left one thing that mattered more than all of it. This is gnu-efi's
+`memcpy()`, which is where every `CopyMem()` in the program ends up:
+
+```
+2f0:  movzbl (%rsi,%rax,1),%ecx     load one byte
+2f4:  mov    %cl,(%rdi,%rax,1)      store one byte
+2f7:  add    $0x1,%rax
+2fb:  cmp    %rdx,%rax
+2fe:  jne    2f0
+```
+
+One byte per iteration. Against ordinary memory that is eleven times slower than
+it needs to be — 9.9 ms against 0.9 ms for 33 MB, measured on the machine this
+was written on. Against a framebuffer it is far worse than eleven times, because
+a framebuffer is not ordinary memory: every store leaves the processor for the
+graphics card, and one byte per journey is 33 million journeys to put up a single
+3840x2160 screen. **That wipe from the top of the screen to the bottom is not an
+effect. It is a byte-at-a-time loop.**
+
+`egCopyWide()` moves eight bytes per store, four when the addresses are not
+eight-aligned — pixels always are four. rEFInd is built with
+`-fno-tree-loop-distribute-patterns`, so the compiler leaves the loop alone
+instead of turning it back into the `memcpy()` it came from.
+
+Above that sits the memory type itself. Most firmwares leave the framebuffer
+uncacheable, which is what makes each of those journeys expensive in the first
+place; write-combining is the type framebuffers are meant to have, and every
+operating system sets it on the same memory the moment it takes over.
+`egSpeedUpFrameBuffer()` asks the CPU architectural protocol for it once, at the
+resolution it settles on. If the firmware has no such protocol or refuses — OVMF
+answers "Out of Resources", having spent its registers already — nothing changes
+and nothing breaks.
+
+### Time, not frames
+
+An animation used to be counted in frames: draw one, wait 10 ms, draw the next.
+That is the same thing as time only on a machine where drawing is free, and on
+the machine above a frame could take longer to appear than the pause after it.
+Counting frames there stretches every animation — half the speed, twice the
+length — which is exactly what "laggy" means.
+
+So the animations ask the processor what time it is, through `rdtsc` calibrated
+once against a stall of known length, and each one runs for the duration it is
+meant to take: a slow display draws fewer frames, a fast one draws more, and both
+finish at the same moment.
 
 None of this trades quality for speed. Every image is still composed at full
-resolution, the blur radius is unchanged, and the frames are the frames they
-were — there is simply less repetition of work already done.
+resolution, the blur radius is unchanged, and the animations last exactly as long
+as they were designed to — there is simply less repetition of work already done.
 
 ---
 
@@ -389,9 +437,15 @@ goes black, which is why it does not collide with the logo Windows draws next.
 rEFInd is an EFI application and never sets up the FPU, so none of this is
 floating point. Angles are 4096ths of a turn and sines are 4096ths of one, read
 from a 65-entry quarter-wave table with linear interpolation. Against the
-double-precision version the dots land within **0.78 px** on a 110 px radius —
+double-precision version the dots land within **0.78 px** on a 70 px radius —
 the two animations are the same animation, which is the point, because the next
 one to draw it is Plymouth.
+
+The ring is 140 px across at 3840x2160: 6.5% of the height, which is roughly what
+Windows draws. It began at 10%, which is a hoop rather than a spinner. Both
+numbers live twice, in `menu.c` and in `plymouth.py`, and they have to agree —
+the ring the boot menu turns and the ring the system turns after it are meant to
+be one ring that never stops.
 
 ---
 
