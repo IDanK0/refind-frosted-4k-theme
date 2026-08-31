@@ -245,6 +245,28 @@ and the settings screen in the boot menu steps it in quarters.
 
 ---
 
+## One appearance, not two
+
+rEFInd's own sub-menus are a flat grey rectangle with a line of text in it —
+correct, and nothing like the rest of this. There is one style function now, and
+every sub-menu goes through it: settings, about, hidden tags, the boot-options
+screens. Each is a pane of the same glass the tiles are made of — the photograph
+frosted behind a rounded shape, a lit rim, the theme's own colours, and the
+selected row on a rounded bar that fades across rather than snapping.
+
+The whole panel is composed into one image and put up in a single blit. Drawing
+a menu in pieces is what makes it flicker.
+
+Two things worth knowing, since both looked like taste and were arithmetic.
+Rounded corners are sampled in eighths of a pixel, so the square of the corner
+radius is `64·r²`; using `16·r²` gives a corner of half the size and a rectangle
+with the corners bitten out of it. And `InitScroll()` works out how many entries
+fit from the width of a menu **tile**, which is right for the main menu and gives
+five for a list of text — the sixth row of a six-row menu was simply not drawn. A
+panel of lines is bounded by the height of a line.
+
+---
+
 ## Things move
 
 ![The menu arriving](screenshots/anim-in.gif)
@@ -351,6 +373,17 @@ the boot menu: the tile lands on exactly the pixel it would have occupied there.
 ---
 
 ## Design notes
+
+**The screen is painted once.** rEFInd used to paint the whole screen three
+times before the menu appeared: the banner in `SetupScreen()`, a clear to black,
+and the banner again after the scan. At 3840×2160 each of those is a third of a
+second of visible wiping, so what you saw was a wipe, a pause, a black flash and
+another wipe. The screen now stays black until the theme knows what it is
+drawing, and the picture comes up once, out of the black, and goes back down
+into it on the way to an operating system.
+
+The clear before the banner is gone too: it only ever wrote a screenful of one
+colour underneath a screenful of picture.
 
 **The screenshots are rendered by the layout code itself.** `make-screenshots.py`
 calls the same `preview()` that `build.py` uses, which walks rEFInd's own
