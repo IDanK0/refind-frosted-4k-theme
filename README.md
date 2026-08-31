@@ -417,8 +417,18 @@ The log from the machine itself is what found it. Every full-screen paint landed
 at ~2970 ms after the keypress and the handoff took 1480 ms to draw its first
 frame — and 33 MB against 2.97 s, 14 MB against 1.48 s, is the same number both
 times: **11 MB/s**, which is a framebuffer being read, not a program being slow.
-`egDrawImage()` now goes through `egDrawImageArea()` like everything else, and
-the log says `Screen reads are coming from the mirror`.
+`egDrawImage()` now goes through `egDrawImageArea()` like everything else. The
+same machine, the same log, the next boot:
+
+| from the keypress to… | before | after |
+|---|---|---|
+| the handoff ready to draw | 1480 ms | **8 ms** |
+| the menu faded out | 1774 ms | 301 ms |
+| the splash finished | 4033 ms | 2560 ms |
+
+The 301 ms is the fade-out itself, which is 280 ms by design, and 2560 is
+280 + 450 + 1800 — the dissolve, the tile's travel and one turn of the ring.
+There is nothing left in there that is not the animation.
 
 ### Answer first, then work
 
