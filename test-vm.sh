@@ -45,11 +45,17 @@ for pair in "ubuntu grubx64.efi" "Microsoft/Boot bootmgfw.efi"; do
     fi
 done
 # the virtual display tops out below 4K, and the log is the point of the exercise
-sed -i "s/^resolution .*/resolution 1920 1080/;s/^timeout .*/timeout 120/;s/^log_level .*/log_level 3/" \
+sed -i "s/^resolution .*/resolution 3840 2160/;s/^timeout .*/timeout 120/;s/^log_level .*/log_level 3/" \
     "$M/EFI/BOOT/refind.conf"
 grep -q "^log_level" "$M/EFI/BOOT/refind.conf" || echo "log_level 3" >> "$M/EFI/BOOT/refind.conf"
 sync; umount "$M"; rmdir "$M"
 chown '"$(id -u):$(id -g)"' "$IMG"'
+
+# virtio-vga will not offer 3840x2160; the plain VGA device will, given the
+# memory for it. The theme allocates three screen-sized images, so testing at
+# the resolution the machine actually runs at is the point.
+VIDEO="VGA,xres=3840,yres=2160,vgamem_mb=64"
+[ "${2:-}" = "--1080" ] && VIDEO="virtio-vga,xres=1920,yres=1080"
 
 cp -f "$VARS" "$VM/vars.fd"
 rm -f "$VM/mon.sock" "$VM"/shot*.ppm
@@ -57,7 +63,7 @@ setsid qemu-system-x86_64 -machine q35 -m 2048 -smp 2 \
     -drive if=pflash,format=raw,unit=0,readonly=on,file="$CODE" \
     -drive if=pflash,format=raw,unit=1,file="$VM/vars.fd" \
     -drive format=raw,file="$VM/esp.img" \
-    -device virtio-vga,xres=1920,yres=1080 \
+    -device "$VIDEO" \
     -display none -monitor unix:"$VM/mon.sock",server,nowait >"$VM/qemu.log" 2>&1 &
 QPID=$!
 sleep 16

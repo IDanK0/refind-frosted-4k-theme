@@ -87,6 +87,15 @@ It builds a disk from what is on the real EFI partition, boots it under OVMF,
 takes a screenshot and pulls the boot log back out — `vm/shot.png` and
 `vm/refind.log`. It says plainly whether the menu drew.
 
+It runs at 3840×2160, which matters: the theme allocates three screen-sized
+images at boot, and a test at 1080p asks a quarter of the memory the machine
+will. (`--1080` forces the smaller one; `virtio-vga` cannot offer 4K, so the
+plain `VGA` device is used with the memory for it.)
+
+The virtual machine holds nothing but the EFI partition — no Linux, no Python,
+nothing installed. That it boots, draws the menu and opens the settings screen
+is the demonstration that none of those are needed.
+
 Needs `qemu-system-x86` and `ovmf`.
 
 ---
