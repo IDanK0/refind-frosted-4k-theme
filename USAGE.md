@@ -63,6 +63,19 @@ choices made from the boot menu are never overwritten by a reinstall.
 
 ---
 
+## Rebuilding the logos
+
+```bash
+./fetch-icons.py            # needs librsvg2-bin and network
+```
+
+Rewrites `stock-icons/` from vector sources: the SVGs rEFInd ships, and the
+official logo on Wikimedia Commons for the rest. It prints what it could not
+find and writes the provenance to `stock-icons/SOURCES.md`. Only needed if you
+want to change which logo a system gets.
+
+---
+
 ## Before adding a photograph
 
 ```bash

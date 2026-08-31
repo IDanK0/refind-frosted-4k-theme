@@ -140,10 +140,18 @@ already patched and rebuilt here, translating them is more of the same patch
 rather than a different kind of problem; it simply is not done yet. That now
 covers the settings screen too.
 
-**Discovered systems are slightly softer than the hand-drawn ones.** rEFInd's
-stock icons are 128px and get scaled up to 218. Windows and Ubuntu are drawn as
-vectors and stay sharp. Dropping a larger PNG into `stock-icons/` and rebuilding
-fixes any of them.
+**Seventeen of the forty-seven logos are still 128 pixels.** `fetch-icons.py`
+rebuilt the rest from vectors — twenty-two rasterised at 512, from the SVG
+sources rEFInd ships and from Wikimedia Commons, and eight drawn here — which is
+every system anyone is likely to boot. What is left is Chakra, CrunchBang,
+Frugalware, Mandriva and a handful of others with no vector anywhere, several of
+them distributions that no longer exist.
+
+Every icon is trimmed to its ink and re-fitted to the same share of its frame.
+`rsvg-convert` keeps the aspect ratio, so a wide logo rendered into a square
+comes out letterboxed and lands on the plate visibly smaller than its
+neighbours: Devuan's swoosh arrived at two thirds the size of the bitmap it
+replaced, which reads as a worse icon however much sharper it is.
 
 ---
 
