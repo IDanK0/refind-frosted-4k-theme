@@ -762,7 +762,7 @@ diff -urN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-08-31 16:02:59.153196247 +0200
++++ b/refind/menu.c	2026-08-31 23:40:47.362173324 +0200
 @@ -59,6 +59,7 @@
  #include "screen.h"
  #include "lib.h"
@@ -917,7 +917,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1127,372 @@
+@@ -1074,31 +1127,380 @@
  // graphical main menu style
  //
  
@@ -1195,7 +1195,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +                          IN UINTN *itemPosX, IN UINTN row0PosY, IN UINTN row1PosY) {
 +    EG_IMAGE *Tile[ANIM_MAX_TILES], *Back[ANIM_MAX_TILES];
 +    UINTN     X[ANIM_MAX_TILES], Y[ANIM_MAX_TILES];
-+    UINTN     Count = 0, f, i, Alpha, Start, Steps;
++    UINTN     Count = 0, f, i, Alpha, Start, Steps, Drawn = 0;
 +    UINT64    Began, Span;
 +    INTN      e;
 +
@@ -1236,9 +1236,14 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +            Alpha = (f > Start) ? EaseOut(f - Start, ANIM_IN_FRAMES) : 0;
 +            BlendBlit(Back[i], Tile[i], Alpha, X[i], Y[i]);
 +        }
++        Drawn++;
 +        if (!HoldFrame(FrameAt, ANIM_FRAME_US, TRUE))
 +            break;
 +    }
++    LOG(1, LOG_LINE_NORMAL,
++        L"Menu entrance: %d tiles, %d frames, %d ms of a wanted %d, clock %d ticks/us",
++        (INTN) Count, (INTN) Drawn, (INTN) ((NowUs() - Began) / 1000),
++        (INTN) (Span / 1000), (INTN) TicksPerUs);
 +    for (i = 0; i < Count; i++)          // whatever the timing did, end whole
 +        BltImage(Tile[i], X[i], Y[i]);
 +    for (i = 0; i < Count; i++) {
@@ -1298,13 +1303,16 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Screen->Entries[State->CurrentSelection]->Row == 0)
          AdjustScrollState(State);
++    if (!MenuHasAppeared)
++        LOG(1, LOG_LINE_NORMAL, L"Menu entrance: animations %s, a key already waiting: %s",
++            GlobalConfig.Animations ? L"on" : L"off", KeyIsWaiting() ? L"yes" : L"no");
 +    if (GlobalConfig.Animations && !MenuHasAppeared && !KeyIsWaiting())
 +        AnimateMenuIn(Screen, State, itemPosX, row0PosY, row1PosY);
 +    MenuHasAppeared = TRUE;
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1544,8 @@
+@@ -1150,10 +1552,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -1317,7 +1325,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1566,376 @@
+@@ -1174,6 +1574,376 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -1694,7 +1702,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1949,7 @@
+@@ -1187,7 +1957,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -1703,7 +1711,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2222,7 @@
+@@ -1460,7 +2230,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -1712,7 +1720,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2300,7 @@
+@@ -1538,7 +2308,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -1721,7 +1729,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2402,7 @@
+@@ -1640,7 +2410,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -1730,7 +1738,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2440,7 @@
+@@ -1678,7 +2448,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -1739,7 +1747,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2462,7 @@
+@@ -1700,7 +2470,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -1748,7 +1756,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2551,7 @@
+@@ -1789,7 +2559,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -1757,7 +1765,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2576,7 @@
+@@ -1814,7 +2584,7 @@
      }
  
      if (AllowGraphicsMode) {
