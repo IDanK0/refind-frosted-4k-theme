@@ -100,17 +100,43 @@ rebuilds the splash if they have drifted apart.
 
 ## And Windows
 
-Windows does not choose the picture it shows while it starts. It reads one out
-of an ACPI table that the firmware fills in with the manufacturer's logo, which
-is why a laptop shows its own badge during a Windows boot. A bootloader is the
-last thing to run before the operating system, so it is the last thing that can
-write to that table.
+Windows gets the same treatment, and this is what it looks like: choose Windows
+and it starts on your photograph, with the Windows tile where the menu left it
+and Windows' own ring of dots turning underneath.
 
-![What the next system is handed](screenshots/windows-logo.png)
+![What Windows is handed](screenshots/windows-handoff.png)
 
-That image was read back off `/sys/firmware/acpi/bgrt/image` on a running
-machine, which is where the picture ends up. It puts nothing inside Windows, so
-reinstalling Windows leaves it alone.
+*This is the bitmap that goes into the table: no dots, because Windows adds its
+own.*
+
+Windows will not take a splash the way Linux does, because there is no initramfs
+to put one in. It does not choose its own boot picture either. It reads one out
+of an ACPI table called BGRT, which the firmware fills in with the
+manufacturer's logo, and that is why a laptop shows its own badge while Windows
+starts. A boot menu is the last thing to run before the operating system, so it
+is the last thing that can write to that table. `bgrt.c` writes the screen there
+as a full-screen 24-bit bitmap and reseals the table's checksum.
+
+Two things follow. The picture is handed over before our ring starts, since
+Windows draws its own regardless and two turning at once would be worse than
+one. And nothing
+is installed inside Windows, so there is nothing there to break and nothing that
+needs to survive Windows being reinstalled.
+
+**What has been checked, and what has not.** Linux reads the same table, so the
+handover can be verified without Windows: after booting Ubuntu through the menu,
+`/sys/firmware/acpi/bgrt/status` reads 1, the type is 0 for BMP, the offsets are
+0,0 and `/sys/firmware/acpi/bgrt/image` is a 24,883,254-byte bitmap that opens as
+the 3840×2160 screen the menu handed over. So the table is written correctly and
+an operating system accepts it. Whether *Windows* draws it has not been tested
+here; [HackBGRT](https://github.com/Metabolix/HackBGRT) has been changing the
+Windows boot logo through the same table for years, and wants the same 24-bit
+BMP with a 54-byte header that this writes.
+
+One caveat worth knowing if you dual-boot: reaching Windows through a new boot
+manager changes the measured boot path, and a machine with **BitLocker** may ask
+for its recovery key the first time. Have the key to hand, or suspend BitLocker
+before the first boot and resume it after.
 
 ## Requirements
 
