@@ -1219,7 +1219,7 @@ diff -urN a/refind/main.c b/refind/main.c
                     MainLoopRunning = FALSE;   // just in case we get this far
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-09-01 21:34:27.383026066 +0200
++++ b/refind/menu.c	2026-09-01 22:24:42.918545065 +0200
 @@ -59,7 +59,9 @@
  #include "screen.h"
  #include "lib.h"
@@ -1376,7 +1376,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1128,492 @@
+@@ -1074,31 +1128,493 @@
  // graphical main menu style
  //
  
@@ -1385,11 +1385,12 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +//
 +// rEFInd draws straight into a linear framebuffer, so anything that moves has to
 +// be composed and blitted by hand. Three things make that affordable at
-+// 3840x2160. A tile is 617x617 -- a fortieth of the screen -- so only the parts
++// 3840x2160. A tile is 617x617, a twenty-second of the screen, so only the parts
 +// that change are touched. The frosted background behind a tile depends on where
-+// the tile is, not on what frame it is, so it is computed once per position
-+// rather than once per frame. And egCopyScreenArea() can read the framebuffer
-+// back, so a cross-fade never has to recompose what is already on the screen.
++// the tile is and not on what frame it is, so it is computed once per position
++// instead of once per frame. And the two ends of a cross-fade are composed, not
++// read back off the screen: a framebuffer is quick to write and slow to read,
++// and the selection fade runs on every press of an arrow key.
 +//
 +// Nothing here is ever allowed to get in the way: every loop stops the moment a
 +// keystroke is waiting, so holding an arrow key moves exactly as fast as it did
@@ -1883,7 +1884,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1665,8 @@
+@@ -1150,10 +1666,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -1896,7 +1897,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1687,416 @@
+@@ -1174,6 +1688,416 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -2313,7 +2314,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +2110,7 @@
+@@ -1187,7 +2111,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -2322,7 +2323,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2383,7 @@
+@@ -1460,7 +2384,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -2331,7 +2332,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2461,7 @@
+@@ -1538,7 +2462,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -2340,7 +2341,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2563,7 @@
+@@ -1640,7 +2564,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -2349,7 +2350,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2601,7 @@
+@@ -1678,7 +2602,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2358,7 +2359,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2623,7 @@
+@@ -1700,7 +2624,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2367,7 +2368,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2712,7 @@
+@@ -1789,7 +2713,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -2376,7 +2377,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2737,7 @@
+@@ -1814,7 +2738,7 @@
      }
  
      if (AllowGraphicsMode) {
