@@ -118,6 +118,37 @@ Needs `qemu-system-x86` and `ovmf`.
 
 ## The splash
 
+### The splash follows the menu
+
+`sudo ./install-plymouth.sh` installs two things: the splash itself, built from
+whatever photograph the boot menu is showing *now* and at the resolution this
+screen actually boots at, and a service that keeps it that way.
+
+The menu can change its photograph at any time, from its own settings screen,
+with no operating system running — and the splash lives in an initramfs built
+weeks earlier, so it cannot be told. Instead it asks: `refind-splash-sync` reads
+`theme.conf` off the EFI partition once per boot, compares it with what the
+installed theme was built from, and rebuilds only when they differ. Almost every
+boot it finds nothing to do and stops. When you do change the photograph, the
+splash matches it from the boot after.
+
+Run `sudo refind-splash-sync` yourself to have it now rather than next time, and
+`--force` to rebuild regardless.
+
+**On another system.** Nothing here assumes Debian. The initramfs is rebuilt with
+whichever of initramfs-tools and dracut is present, the theme is selected through
+`update-alternatives` or `plymouth-set-default-theme`, and the fonts are looked
+for rather than assumed. Install a second system tomorrow, run the same script
+inside it, and it gets the same splash carrying *its* logo and *its* name, over
+the same photograph — because the logo and name come from that system's
+`os-release` and the photograph comes from the EFI partition both of them share.
+
+The boot menu's own splash needs none of this: it already shows the right icon,
+name and ring for anything it can boot, including a system installed next year,
+because it draws them itself. What `install-plymouth.sh` buys is the seconds
+*after* the handover, which belong to the system being booted and can only be
+arranged from inside it.
+
 `sudo ./install-plymouth.sh` replaces Ubuntu's spinner with the boot menu
 carried on: the same photograph, the same frosted tile holding the logo and the
 name of this system, and a ring of dots turning underneath. Rebuild it after
