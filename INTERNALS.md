@@ -92,9 +92,9 @@ photograph.
 
 ![The same theme against six photographs](screenshots/library.png)
 
-None of this is written down per photograph. `library-preview.py` renders the
-menu against every picture in the library, and each of those hues is what the
-picture itself yielded, measured on the photograph in the state the menu will
+None of this is written down per photograph. The menu above is rendered against
+every picture in the library, and each of those hues is what the picture itself
+yielded, measured on the photograph in the state the menu will
 use it, dimmed and softened, and not on the file as it came off Commons. Three
 warm deserts come out at 14°, 18° and 23°, three night skies at 210°, 210° and
 227°, and a photograph of your own gets whatever it happens to contain.
@@ -182,9 +182,8 @@ static BOOLEAN KeyIsWaiting(VOID) {
 so browsing slowly is smooth and holding an arrow key is exactly as fast as it
 was before any of this existed. `animations false` turns the lot off.
 
-`animation-preview.py` renders all of it to a GIF using the same integer easing
-`menu.c` uses (0..256, cubic, no floating point), so timing can be looked at
-without building a bootloader.
+The GIFs above come off the same integer easing `menu.c` uses (0..256, cubic, no
+floating point), so the timing in them is the timing on screen.
 
 ### What it costs to draw
 
@@ -511,10 +510,9 @@ on the way to an operating system.
 The clear before the banner is gone too. It only ever wrote a screenful of one
 colour underneath a screenful of picture.
 
-The screenshots are rendered by the layout code itself. `make-screenshots.py`
-calls the same `preview()` that `build.py` uses, which walks rEFInd's own
-arithmetic for the row positions and runs the same blur the patched binary runs
-at draw time.
+The screenshots are rendered by the layout code itself, through the same
+`preview()` that `build.py` uses, which walks rEFInd's own arithmetic for the row
+positions and runs the same blur the patched binary runs at draw time.
 
 That holds only where the preview uses the *same artefacts*, and for a while it
 did not: it drew the bottom line of text with a font of its own, at a hardcoded
@@ -675,8 +673,8 @@ On a negative `n` that shifts `b` to zero, where `0 > n` is still true and the
 shift is still zero. The bootloader drew the background and then hung before the
 menu. The `n` went negative because sixty thousand weighted samples squared past
 what a 64-bit integer holds. Both the guard and the normalisation are fixed, and
-`test-vm.sh` exists because of it: it found this in one run, where a reboot and a
-guess had found nothing.
+a virtual machine found it, in one run, where a reboot and a guess had found
+nothing.
 
 **10. rEFInd's Makefile does not track header dependencies.** There is no `-MMD`
 anywhere in it, so editing a header and running `make` rebuilds nothing that

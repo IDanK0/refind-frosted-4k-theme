@@ -88,28 +88,6 @@ A good photograph reads roughly: noise under 2, chroma under 0.6, mottling under
 4, sharpness near 75%. Anything with noise above 3 or sharpness far below 70% has
 less picture in it than its pixel count suggests.
 
-## Before trusting a build
-
-```bash
-./test-vm.sh              # boot it in a virtual machine, photograph the screen
-./test-vm.sh --settings   # and open the settings screen while you are there
-```
-
-It builds a disk from what is on the real EFI partition, boots it under OVMF,
-takes a screenshot and pulls the boot log back out, into `vm/shot.png` and
-`vm/refind.log`. It says plainly whether the menu drew.
-
-It runs at 3840×2160, which matters: the theme allocates three screen-sized
-images at boot, and a test at 1080p asks a quarter of the memory the machine
-will. (`--1080` forces the smaller one; `virtio-vga` cannot offer 4K, so the
-plain `VGA` device is used with the memory for it.)
-
-The virtual machine holds nothing but the EFI partition. No Linux, no Python,
-nothing installed. That it boots, draws the menu and opens the settings screen
-is the demonstration that none of those are needed.
-
-Needs `qemu-system-x86` and `ovmf`.
-
 ## Keeping itself right
 
 Three things drift on a machine that is otherwise working perfectly, and all

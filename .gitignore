@@ -11,10 +11,9 @@ preview*.png
 __pycache__/
 *.pyc
 
-# renders made by library-preview.py
+# local scratch: renders and disk images made while working on the theme,
+# never part of a release
 library/.preview/
-
-# the virtual machine test-vm.sh builds
 vm/
 
 # the rEFInd source tree and binary build-refind.sh makes
