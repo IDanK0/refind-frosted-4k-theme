@@ -168,6 +168,14 @@ eight of them, pushed through the framebuffer before anything is on it: on a rea
 machine that is the slow wipe from top to bottom. The menu's own entrance, which
 is the part you actually watch, is unaffected either way.
 
+`entrance_delay` (0) is how many milliseconds to wait, after the photograph is
+up, before the menu arrives. A monitor takes a second or two to lock onto a
+signal and shows nothing at all until it has, while the firmware has been
+drawing the whole time — so on a slow display the menu's arrival happens
+entirely inside that darkness and the first thing you see is a finished menu,
+which looks exactly like an animation nobody wrote. This is the beat of
+wallpaper before the menu lands on it. A keypress ends the wait immediately.
+
 `handoff_splash` (1800) is how many milliseconds the chosen system is shown on
 its own before rEFInd hands over — the boot logo of everything this machine
 boots, since rEFInd is the only thing that runs before all of them. 1800 is one
