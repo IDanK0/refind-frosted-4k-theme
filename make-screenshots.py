@@ -8,12 +8,13 @@ apply_frost(), which is the box blur the patched rEFInd runs at draw time.
 
     ./build.py && ./make-screenshots.py
 """
-import os, sys
+import math, os, sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from build import preview, W, H, TILE, XSP, ICON_OFF, PLATE_X, PLATE_Y, PLATE, R0Y
+from plymouth import which_os, PERIOD
 
 ASSETS = os.path.join(HERE, "assets")
 SHOTS  = os.path.join(HERE, "screenshots")
@@ -76,6 +77,31 @@ def main():
     grid.resize((960, 1620), Image.LANCZOS).save(os.path.join(SHOTS, "handoff-any.png"),
                                                  optimize=True)
     print("  handoff.png, handoff-any.png  the same screen for three systems")
+
+    # The Plymouth splash: what the initramfs actually draws.
+    #
+    # This picture used to be a file in screenshots/ that nothing here produced,
+    # so it went on showing a ring of the size it was before the ring was
+    # changed, and nobody could tell. It is the theme's own background.png with
+    # the theme's own dots on it, in the theme's own places -- the same
+    # plymouth.py that writes the theme writes this.
+    from plymouth import still, dot, angle, layout, NDOTS, DOT, RING
+    from build import BIG
+    stem = f"os_{which_os()[0]}"
+    if not os.path.exists(os.path.join(ASSETS, "icons", f"{stem}.png")):
+        stem = "os_linux"
+    path = os.path.join(ASSETS, "icons", f"{stem}.png")
+    c    = still(ASSETS, path).convert("RGBA")
+    icon = Image.open(path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
+    _, _, cx, cy = layout(icon)
+    d = dot()
+    for i in range(NDOTS):
+        a = angle(0.35 * PERIOD, i)
+        c.alpha_composite(d, (int(cx + RING * math.cos(a) - DOT / 2),
+                              int(cy + RING * math.sin(a) - DOT / 2)))
+    c.convert("RGB").resize((1920, 1080), Image.LANCZOS) \
+     .save(os.path.join(SHOTS, "plymouth.png"), optimize=True)
+    print("  plymouth.png  the splash, drawn by the code that generates it")
 
 if __name__ == "__main__":
     main()
