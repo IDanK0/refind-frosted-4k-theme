@@ -189,20 +189,27 @@ contain, and nothing is written down anywhere — point it at a photo of your ow
 and it works out its own palette.
 
 Averaging colour is where this usually goes wrong. A plain mean of the pixels
-turns to grey, because opposite hues cancel. So the hues are averaged as points
-on a circle:
+turns to grey, because opposite hues cancel. The usual repair is to treat each
+hue as a point on a circle and average those, which needs a sine and a cosine
+per pixel — and a bootloader has neither, so the same answer has to be reached
+without them.
 
-```python
-a = h * 2 * math.pi
-x += math.cos(a) * w
-y += math.sin(a) * w
-```
+It can be, and more simply. Every colour is a grey plus a departure from grey;
+that departure is a vector in the plane at right angles to the grey axis; and
+averaging those vectors *is* the circular mean, written in linear coordinates.
+So `accent()` sums `(r,g,b)` minus its own mean, weighted, and the direction of
+what is left is the picture's hue. No trigonometry anywhere, and the preview and
+the bootloader run the same arithmetic — `build.py`'s `accent()` is a
+transcription of `SampleAccent()` in `refind/theme.c`, integer for integer.
+They were once two different formulations, HSV here and vectors there, and they
+drifted twenty-four levels apart: a preview showing a colour the machine would
+not draw.
 
-weighted by how colourful and how bright each pixel is. Brightness has to count
-for a great deal — `v` **cubed**, not `v`. With `v` alone a vast dark dune drags
-the circular mean away from the small bright sky the eye actually reads the
-picture by: the default photograph came out at hue 341°, a pink, when its sky is
-at 13° and the picture is plainly warm. Cubed, it lands on 17°.
+The weight is where the judgement lives. It counts how colourful a pixel is, and
+how bright — **brightness cubed**, not brightness. With brightness counting once,
+a vast dark dune outvotes the small bright sky the eye actually reads the picture
+by: the default photograph came out at hue 341°, a pink, when its sky is at 13°
+and the picture is plainly warm. Cubed, it lands on 18°.
 
 Every colour in the theme is then a saturation and a lightness away from that
 hue, and the saturations are deliberately small: around 0.09, which reads as
@@ -213,9 +220,9 @@ photograph, not a coloured theme.
 
 Nothing above is written down per photograph — `library-preview.py` renders the
 menu against every picture in the library, and each of those hues is what the
-picture itself yielded. Two warm deserts come out at 17° and 25°, four night
-skies between 215° and 229°, and a photograph of your own gets whatever it
-happens to contain.
+picture itself yielded. Three warm deserts come out at 18°, 18° and 24°, three
+night skies at 214°, 218° and 226°, and a photograph of your own gets whatever
+it happens to contain.
 
 A logo is not washed over with that colour, which would flatten it. Its own
 lightness picks a point on a ramp between a dark and a light version of the hue,
@@ -285,7 +292,7 @@ fades the highlight across rather than snapping it. Choosing something dissolves
 the rest of the menu and sends that tile travelling to the middle, where the ring
 picks up.
 
-Three things make that affordable at 3840×2160. A tile is 617×617 — a fortieth
+Three things make that affordable at 3840×2160. A tile is 617×617 — a twenty-second
 of the screen — so only what changes is touched. The frost behind a tile depends
 on where the tile is, not on which frame it is, so it is computed once per
 position instead of once per frame. And `egCopyScreenArea()` reads the
@@ -527,7 +534,7 @@ Pick Ubuntu and the menu does not disappear: the same photograph stays, with the
 tile you chose still on it, and a ring of dots turns underneath while the system
 comes up — the ring rEFInd was already turning, continued at the same size, the
 same speed and the same easing. `./plymouth.py` builds it,
-`sudo ./install-plymouth.sh` installs it.
+`sudo ./setup.sh` installs it.
 
 <img src="screenshots/spinner.gif" width="200" align="right">
 
@@ -543,7 +550,7 @@ so they gather where the path is slow and string out where it is fast. The four
 numbers that govern it are not free: the dots span
 `2π·g'(p)·(NDOTS−1)·STAGGER` of the circle and `g'` runs between `1−SWING` and
 `1+SWING`, so the arc closes to 81° and opens to 279°. At its tightest that is
-156px of arc holding 120px of dots — they gather without ever colliding, which
+99px of arc holding 78px of dots — they gather without ever colliding, which
 is the whole trick.
 
 The theme picks its icon from `/etc/os-release`, so it shows the logo and the
@@ -593,7 +600,8 @@ Windows boot and not a Windows one.
 A bootloader is the last thing to run before the operating system, so it is the
 last thing that can write to that table. `bgrt.c` finds it through the root
 pointer in the EFI configuration table, writes the screen there as a full-screen
-24-bit bitmap in memory nothing reclaims, and reseals the table's checksum.
+24-bit bitmap in boot-services memory — which is where firmware puts its own,
+and the only kind Linux will accept — and reseals the table's checksum.
 Nothing is installed inside Windows, nothing has to survive Windows being
 reinstalled, and there is nothing there to break.
 
@@ -659,8 +667,10 @@ rEFInd shrink it. Downscaling stays sharp; upscaling does not.
 
 ## Geometry
 
-Every number below is derived, not chosen. `build.py` recomputes them and
-**asserts** the spacing is symmetric before it writes a single file.
+Every number below is derived, not chosen: `build.py` recomputes each one from
+rEFInd's own arithmetic rather than storing it. The one thing it asserts before
+writing anything is that at least two OS tiles still fit across the screen —
+below that rEFInd starts scrolling, and a menu that scrolls is a different menu.
 
 | Quantity | Formula (`refind/menu.c`) | Value |
 |---|---|---|
@@ -677,7 +687,7 @@ centred vertically and the tool row hangs off it, so the only way to place the
 tool row *below* the baked labels — instead of on top of them — is to inflate the
 OS tile. 549 is the value that yields exactly **52 px above and 52 px below** the
 labels. The logos stay 218 px because they are drawn inside mostly-transparent
-1098 px canvases: the tile is a bounding box, not the artwork.
+549 px canvases: the tile is a bounding box, not the artwork.
 
 Two hard limits constrain it:
 
@@ -691,27 +701,154 @@ Two hard limits constrain it:
 
 ## Requirements
 
-- rEFInd **0.14.x** (`apt install refind`)
-- Python 3 with Pillow (`python3-pil`) — only to regenerate assets
-- A display running at 3840×2160 in firmware (check with `videoinfo` at the
-  rEFInd shell if unsure)
-- **Secure Boot disabled**, unless you sign rEFInd yourself
-- DejaVu fonts (`fonts-dejavu-core`) for regeneration
+A machine that boots through **UEFI**, on **x86-64**, with **Secure Boot off**.
+
+That last one is not a preference. The boot menu is rEFInd with a patch, built
+on your machine, and nothing signs it; with Secure Boot on the firmware will
+refuse to start it and show a security violation instead of a menu. The
+installer checks, says so, and stops rather than leaving you with a machine that
+does not boot. There are three ways round it — turn Secure Boot off, enrol the
+binary's hash with `mokutil --import-hash`, or sign it yourself with `sbctl` —
+and the installer prints all three when it finds Secure Boot on.
+
+Everything else it can find out for itself, and will install for you if you let
+it. What it needs:
+
+| For | What |
+|---|---|
+| building the boot menu | a C compiler, `make`, `objcopy`, **gnu-efi** |
+| drawing the artwork | **Python 3** with **Pillow**, and the **DejaVu** fonts |
+| the firmware boot entry | **efibootmgr** |
+| the splash | **Plymouth**, and one of initramfs-tools, dracut or mkinitcpio |
+
+```bash
+sudo ./setup.sh --install-deps      # work out the names and install them
+```
+
+or by hand:
+
+| | |
+|---|---|
+| Debian, Ubuntu, Mint, Pop!_OS | `build-essential gnu-efi python3-pil fonts-dejavu-core efibootmgr plymouth` |
+| Fedora | `gcc make binutils gnu-efi gnu-efi-devel python3-pillow dejavu-sans-fonts efibootmgr plymouth plymouth-plugin-script` |
+| RHEL, Rocky, Alma 9 | the Fedora list plus `gnu-efi-compat` (all three gnu-efi packages are in CRB) |
+| openSUSE | `gcc make binutils gnu-efi-devel python3-Pillow dejavu-fonts efibootmgr plymouth` |
+| Arch, Manjaro, EndeavourOS | `base-devel gnu-efi python-pillow ttf-dejavu efibootmgr plymouth` |
+| Void | `base-devel gnu-efi-libs python3-Pillow dejavu-fonts-ttf efibootmgr plymouth` |
+| Alpine | `build-base gnu-efi-dev py3-pillow font-dejavu efibootmgr plymouth` |
+
+It builds against **gnu-efi 3.x and 4.x** both. The two generations differ over
+who provides `AsciiStrLen`, which is enough to make the link fail on one of
+them; the patch decides at compile time by asking the header.
+
+The screen does not have to be 4K. Everything is a fraction of screen height and
+the artwork is rendered at whatever resolution the machine reports, so a 1080p
+laptop gets a 1080p theme rather than a shrunken 4K one.
 
 ---
 
 ## Install
 
 ```bash
-git clone <this repo> && cd refind-frosted
-sudo ./install.sh
+git clone https://github.com/IDanK0/refind-frosted
+cd refind-frosted
+sudo ./setup.sh
 ```
 
-`install.sh` backs up your current `refind.conf` and drops the assets into
-`/boot/efi/EFI/refind/`. It refuses to run if rEFInd is not installed there.
+That is the whole thing. What follows is what it does, in order, so you can
+decide whether to let it.
 
-Edit the two `menuentry` blocks in `refind.conf` to match your own loader paths
-before installing.
+### Step by step
+
+**1. It looks at the machine and tells you what it found.**
+
+```
+Looking at this machine
+  + architecture   x86_64
+  + firmware       64-bit UEFI
+  + Secure Boot    off
+  + EFI partition  /boot/efi  (/dev/nvme0n1p1)
+                   139 MB free
+  + distribution   Ubuntu 26.04 LTS  (apt)
+  + initramfs      initramfs-tools
+  + plymouth       installed
+  + screen         3840x2160
+  + dependencies   all present
+```
+
+It stops here, having changed nothing, if any of it is wrong: no UEFI, 32-bit
+firmware, Secure Boot on, no EFI partition, more than one EFI partition (it
+prints them and asks which), or a missing dependency.
+
+**2. It prints the plan, and nothing has happened yet.**
+
+Every path it will write, every backup it will keep, and what it will ask the
+firmware for. Read it. `--dry-run` stops here permanently.
+
+**3. It asks.** `y` to go on, anything else to stop. `--yes` skips the question.
+
+**4. It writes a rescue card first**, to `EFI/<dir>/RESCUE.TXT` on the EFI
+partition, before anything is at risk — plain text with CRLF and an 8.3 name, so
+a firmware shell, a Windows machine or a live USB can all read it. It says how
+to undo everything by hand.
+
+**5. It installs the boot menu.** Builds rEFInd 0.14.2 with the patch (the
+tarball is checked against a recorded SHA-256 first), renders the artwork at
+your screen's resolution, and writes it all to a directory of its own on the EFI
+partition. **It never overwrites another bootloader**, and anything already at a
+path it writes is kept as `*.before-refind-frosted`.
+
+**6. It asks the firmware for a new boot entry — and tries it once.**
+
+By default it sets **BootNext**, not the boot order. The next boot goes to the
+new menu; the one after that boots exactly the way your machine boots today. If
+something is wrong, do nothing and it goes away.
+
+When you are happy with it:
+
+```bash
+sudo ./setup.sh --promote          # now it is the default
+```
+
+or install it that way in the first place with `--permanent`.
+
+**7. It installs the splash**, separately, and if that fails the boot menu you
+just installed is untouched and every initramfs is put back from the copy it
+kept. It refuses to start at all if `/boot` has less room than the rebuild
+needs, because running out of space partway through writing an initramfs is the
+one thing here that really can stop a machine booting.
+
+**8. Reboot.**
+
+### If something goes wrong
+
+Nothing that was there before was replaced, so **every other boot entry on the
+machine still works**. Pick one from the firmware's own boot menu — usually F12,
+F11, Esc or Option at power-on — and the machine starts the way it always did.
+
+```bash
+sudo ./setup.sh --status          # what is installed
+sudo ./setup.sh --uninstall       # put everything back
+```
+
+Every write is recorded in `/var/lib/refind-frosted/journal` *before* it
+happens, and flushed to disk, so `--uninstall` works even if the installer was
+killed halfway through.
+
+### The options
+
+| | |
+|---|---|
+| `--dry-run` | print the plan and stop |
+| `--yes` | do not ask |
+| `--install-deps` | install missing packages first |
+| `--permanent` | boot order, not just the next boot |
+| `--promote` | make an already-installed menu the default |
+| `--status` | what is installed |
+| `--uninstall` | put everything back |
+| `--no-splash` / `--no-menu` | one half only |
+| `--esp PATH` | which EFI partition, when there is more than one |
+| `--background NAME` | which photograph to start with |
 
 ---
 
@@ -742,8 +879,9 @@ work for a bootloader. The colours are not.
 ./build.py --tint 0                 # preview with the original brand colours
 ```
 
-Those write into `assets/`, which `sudo ./install-assets.sh assets` copies to the
-EFI partition along with the library.
+Those write into `assets/`. `sudo ./setup.sh` picks them up from there and puts
+them on the EFI partition along with the library; running it again is safe, and
+it will not touch a `theme.conf` you have already changed from the boot menu.
 
 ---
 
@@ -753,15 +891,16 @@ All constants live at the top of `build.py`:
 
 ```python
 BIG, SMALL = 549, 48       # big_icon_size / small_icon_size in refind.conf
-FROST      = 32            # frost_radius; the preview renders the same blur
+FROST      = 14            # frost_radius; the preview renders the same blur
 PLATE      = 340           # the glass panel inside an icon
 LOGO       = 218           # the OS logo on the panel
 TARGET_LUM = 30.0          # what --darken auto aims for
 ```
 
 Change one, run `./build.py`, and every asset plus the preview render is
-rebuilt. If the spacing no longer works out, the script stops with an assertion
-rather than producing something subtly wrong.
+rebuilt. If `BIG` grows past the point where two OS tiles no longer fit across
+the screen, the script stops with an assertion rather than producing a menu that
+scrolls.
 
 **`BIG` and `SMALL` must match `big_icon_size` and `small_icon_size` in
 `refind.conf`,** and `FROST` must match `frost_radius`: the first pair decides
@@ -907,27 +1046,56 @@ the file is simply never loaded.
 ## Uninstall
 
 ```bash
-sudo cp /boot/efi/EFI/refind/refind.conf.bak-* /boot/efi/EFI/refind/refind.conf
+sudo ./setup.sh --uninstall
 ```
 
-To remove rEFInd entirely and return to GRUB:
+It replays the journal backwards: every file it wrote is removed, every file it
+replaced is put back from the copy it kept, the firmware entry is deleted, the
+boot order is restored, the Plymouth theme goes back to whichever one was
+selected before, and the initramfs is rebuilt without it. Then it renames the
+journal so a second run has nothing to do.
+
+If the journal is gone — a reinstalled system, a different machine — `RESCUE.TXT`
+on the EFI partition lists the same steps by hand:
 
 ```bash
-sudo efibootmgr -o <ubuntu>,<windows>   # reorder, see efibootmgr -v
-sudo apt purge refind
+sudo efibootmgr -v                        # find the refind-frosted entry
+sudo efibootmgr -b XXXX -B                # delete it by number
+sudo rm -rf /boot/efi/EFI/refind-frosted
+sudo systemctl disable refind-frosted-sync.service
+sudo rm -rf /usr/share/plymouth/themes/refind-frosted
+sudo update-initramfs -u -k all           # or dracut --force --regenerate-all
+                                          # or mkinitcpio -P
 ```
+
+Nothing else on the machine was changed, so removing this leaves the bootloader
+you had before exactly as it was.
 
 ---
 
 ## Credits & licensing
 
-- [rEFInd](https://www.rodsbooks.com/refind/) by Roderick W. Smith — GPLv3
-- Every photograph in `library/` is **CC0, public domain, or CC BY**, sourced
-  from Wikimedia Commons. Each entry in `library/library.json` records its
-  licence, author and origin URL. Only *Dunes, Crestone Peaks and Stars*
-  (CC BY 2.0) requires attribution if you redistribute it.
-- Icons, font, frosted glass and layout are generated by `build.py` — no
-  third-party artwork is involved.
+**GPLv3** — see [`LICENSE`](LICENSE). It has to be: the boot menu is rEFInd with
+a patch applied, and rEFInd is GPLv3.
+
+[`NOTICE.md`](NOTICE.md) is the complete account of what was borrowed and from
+whom. In short:
+
+- [rEFInd](https://www.rodsbooks.com/refind/) by Roderick W. Smith — GPLv3, with
+  the parts inherited from rEFIt under Christoph Pfisterer's BSD licence. This
+  repository ships a patch, not a copy.
+- The six photographs in `library/` come from Wikimedia Commons: two CC0, one
+  public domain, two CC BY 2.0, and one CC BY-SA 4.0. `library/library.json`
+  records the licence, the author and the source URL of each. **The CC BY and
+  CC BY-SA ones ask for credit if you pass them on**, and the share-alike one
+  passes its licence to anything derived from it — including a `background.png`
+  built from it.
+- The logos are **not** ours either. `stock-icons/SOURCES.md` says, for each
+  one, whether it came from rEFInd's own SVG set or from Commons, and under
+  which licence. Distribution logos are trademarks of their projects, used here
+  to name the system they belong to.
+- The type is **DejaVu Sans**, public domain and Bitstream Vera Fonts Copyright.
+  Every glyph in `font.png` is rendered from it.
 
 This theme began as a port of the Mojave look from
 [Elegant-grub2-themes](https://github.com/vinceliuice/Elegant-grub2-themes),

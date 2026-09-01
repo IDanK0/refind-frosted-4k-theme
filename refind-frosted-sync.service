@@ -1,15 +1,26 @@
 [Unit]
 Description=Follow the boot menu's photograph into the splash
 Documentation=https://github.com/IDanK0/refind-frosted
-# The EFI partition has to be there to be read, and nothing here is urgent
-# enough to hold the boot up: this runs once the system is already up, notices
-# on almost every boot that nothing has changed, and stops.
+# The EFI partition has to be mounted to be read. local-fs.target is not enough
+# on its own: a partition mounted nofail, or through an automount, or by
+# systemd-gpt-auto-generator rather than fstab, is not ordered before it. Naming
+# the paths makes systemd work out which mount unit actually covers each one.
+# A path that is not a mount point resolves to whichever mount does cover it,
+# so listing all three conventional places costs nothing on a machine that uses
+# one of them.
+RequiresMountsFor=/boot/efi /efi /boot
 After=local-fs.target
+ConditionPathIsDirectory=/usr/share/plymouth/themes
 
 [Service]
 Type=oneshot
 Nice=10
 IOSchedulingClass=idle
+# Rebuilding every kernel's initramfs on a slow disk takes minutes, and the
+# default for a oneshot is ninety seconds -- after which systemd sends SIGTERM
+# to whatever is running. That is not a signal to send to a program that is
+# writing the file the machine boots from.
+TimeoutStartSec=900
 ExecStart=/usr/local/bin/refind-splash-sync
 # A machine with no rEFInd, no photograph chosen yet, or no way to rebuild an
 # initramfs is not a broken machine; it just has nothing to do here.

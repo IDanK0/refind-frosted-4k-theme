@@ -1,80 +1,80 @@
 {
-  "default": "mars-over-dunes",
-  "default_darken": "auto",
-  "backgrounds": [
-    {
-      "slug": "mars-over-dunes",
-      "name": "Mars Over Dunes",
-      "file": "library/mars-over-dunes.jpg",
-      "licence": "Public domain",
-      "author": "Great Sand Dunes National Park and Preserve",
-      "source": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Mars_Over_Dunes_%2849179272651%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminance": 30.9,
-      "suggested_darken": 0,
-      "detail": 2.11,
-      "suggested_blur": 4
-    },
-    {
-      "slug": "clear-desert-night-sky",
-      "name": "Clear Desert Night Sky",
-      "file": "library/clear-desert-night-sky.jpg",
-      "licence": "CC0",
-      "author": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
-      "source": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Clear_Desert_Night_Sky_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminance": 153.8,
-      "suggested_darken": 80,
-      "detail": 2.98,
-      "suggested_blur": 8
-    },
-    {
-      "slug": "desert-skies",
-      "name": "Desert Skies",
-      "file": "library/desert-skies.jpg",
-      "licence": "CC0",
-      "author": "Jared Evans <a rel=\"nofollow\" class=\"external text\" href=\"ht",
-      "source": "https://upload.wikimedia.org/wikipedia/commons/9/98/Desert_Skies_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminance": 107.4,
-      "suggested_darken": 72,
-      "detail": 1.46,
-      "suggested_blur": 4
-    },
-    {
-      "slug": "dune-45-at-sunrise",
-      "name": "Dune 45 at Sunrise",
-      "file": "library/dune-45-at-sunrise.jpg",
-      "licence": "CC BY-SA 4.0",
-      "author": "Giles Laurent",
-      "source": "https://commons.wikimedia.org/wiki/File:006_Dune_45_in_Sossusvlei_at_sunrise_Photo_by_Giles_Laurent.jpg",
-      "luminance": 120.8,
-      "suggested_darken": 75,
-      "detail": 1.68,
-      "suggested_blur": 0
-    },
-    {
-      "slug": "namib-dune-formations",
-      "name": "Namib Dune Formations",
-      "file": "library/namib-dune-formations.jpg",
-      "licence": "CC BY 2.0",
-      "author": "Sonse",
-      "source": "https://commons.wikimedia.org/wiki/File:Dune_Formations_Namib_Desert_(37053844764).jpg",
-      "luminance": 128.0,
-      "suggested_darken": 77,
-      "detail": 5.25,
-      "suggested_blur": 0
-    },
-    {
-      "slug": "dunes-crestone-peaks-stars",
-      "name": "Dunes, Crestone Peaks and Stars",
-      "file": "library/dunes-crestone-peaks-stars.jpg",
-      "licence": "CC BY 2.0",
-      "author": "Great Sand Dunes National Park and Preserve",
-      "source": "https://upload.wikimedia.org/wikipedia/commons/2/25/Dunes%2C_Crestone_Peaks_and_Stars_on_a_Quarter_Moon_Night_%2816992313172%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
-      "luminance": 41.6,
-      "suggested_darken": 28,
-      "detail": 2.34,
-      "suggested_blur": 4
-    }
-  ],
-  "default_blur": 0,
-  "default_tint": 100
+ "default": "mars-over-dunes",
+ "default_darken": "auto",
+ "backgrounds": [
+  {
+   "slug": "mars-over-dunes",
+   "name": "Mars Over Dunes",
+   "file": "library/mars-over-dunes.jpg",
+   "licence": "Public domain",
+   "author": "Great Sand Dunes National Park and Preserve",
+   "source": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Mars_Over_Dunes_%2849179272651%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+   "luminance": 30.9,
+   "suggested_darken": 0,
+   "detail": 2.11,
+   "suggested_blur": 4
+  },
+  {
+   "slug": "clear-desert-night-sky",
+   "name": "Clear Desert Night Sky",
+   "file": "library/clear-desert-night-sky.jpg",
+   "licence": "CC0",
+   "author": "Jared Evans",
+   "source": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Clear_Desert_Night_Sky_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+   "luminance": 153.8,
+   "suggested_darken": 80,
+   "detail": 2.98,
+   "suggested_blur": 8
+  },
+  {
+   "slug": "desert-skies",
+   "name": "Desert Skies",
+   "file": "library/desert-skies.jpg",
+   "licence": "CC0",
+   "author": "Jared Evans",
+   "source": "https://upload.wikimedia.org/wikipedia/commons/9/98/Desert_Skies_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+   "luminance": 107.4,
+   "suggested_darken": 72,
+   "detail": 1.46,
+   "suggested_blur": 4
+  },
+  {
+   "slug": "dune-45-at-sunrise",
+   "name": "Dune 45 at Sunrise",
+   "file": "library/dune-45-at-sunrise.jpg",
+   "licence": "CC BY-SA 4.0",
+   "author": "Giles Laurent",
+   "source": "https://commons.wikimedia.org/wiki/File:006_Dune_45_in_Sossusvlei_at_sunrise_Photo_by_Giles_Laurent.jpg",
+   "luminance": 120.8,
+   "suggested_darken": 75,
+   "detail": 1.68,
+   "suggested_blur": 0
+  },
+  {
+   "slug": "namib-dune-formations",
+   "name": "Namib Dune Formations",
+   "file": "library/namib-dune-formations.jpg",
+   "licence": "CC BY 2.0",
+   "author": "Sonse",
+   "source": "https://commons.wikimedia.org/wiki/File:Dune_Formations_Namib_Desert_(37053844764).jpg",
+   "luminance": 128.0,
+   "suggested_darken": 77,
+   "detail": 5.25,
+   "suggested_blur": 0
+  },
+  {
+   "slug": "dunes-crestone-peaks-stars",
+   "name": "Dunes, Crestone Peaks and Stars",
+   "file": "library/dunes-crestone-peaks-stars.jpg",
+   "licence": "CC BY 2.0",
+   "author": "Great Sand Dunes National Park and Preserve",
+   "source": "https://upload.wikimedia.org/wikipedia/commons/2/25/Dunes%2C_Crestone_Peaks_and_Stars_on_a_Quarter_Moon_Night_%2816992313172%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+   "luminance": 41.6,
+   "suggested_darken": 28,
+   "detail": 2.34,
+   "suggested_blur": 4
+  }
+ ],
+ "default_blur": 0,
+ "default_tint": 100
 }

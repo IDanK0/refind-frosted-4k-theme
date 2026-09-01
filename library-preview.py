@@ -18,7 +18,11 @@ import build
 SHOTS = os.path.join(HERE, "screenshots")
 CELL  = (640, 360)
 HEAD  = 40
-FONTS = "/usr/share/fonts/truetype/dejavu/DejaVuSans"
+# The same search build.py does, rather than the Debian path build.py exists to
+# avoid: this ran for eighty-three seconds rendering every photograph and then
+# fell over on the font at the very end, on any system that is not Debian.
+FONT_BOLD  = build._font("DejaVuSans-Bold.ttf")
+FONT_PLAIN = build._font("DejaVuSans.ttf", "DejaVuSans-Bold.ttf")
 
 
 def main():
@@ -44,8 +48,8 @@ def main():
     rows  = (len(entries) + cols - 1) // cols
     sheet = Image.new("RGB", (CELL[0] * cols, (CELL[1] + HEAD) * rows), (16, 16, 16))
     draw  = ImageDraw.Draw(sheet)
-    bold  = ImageFont.truetype(FONTS + "-Bold.ttf", 19)
-    plain = ImageFont.truetype(FONTS + ".ttf", 16)
+    bold  = ImageFont.truetype(FONT_BOLD, 19)
+    plain = ImageFont.truetype(FONT_PLAIN, 16)
     for i, (name, shot, hue, sat, logo) in enumerate(entries):
         x, y = (i % cols) * CELL[0], (i // cols) * (CELL[1] + HEAD)
         sheet.paste(Image.open(shot).convert("RGB").resize(CELL, Image.LANCZOS), (x, y + HEAD))

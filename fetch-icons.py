@@ -18,7 +18,7 @@ longer exist.
 
     ./fetch-icons.py            # needs rsvg-convert and network
 """
-import json, os, subprocess, sys, urllib.parse
+import json, os, shutil, subprocess, sys, urllib.parse
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -82,14 +82,44 @@ def normalise(path):
 
 
 def curl(url, out):
-    subprocess.run(["curl", "-sSL", "--max-time", "120", "-A", UA, "-o", out, url],
-                   capture_output=True)
-    return os.path.exists(out) and os.path.getsize(out) > 2000
+    """Fetch a PNG, and only replace the committed one once it really is a PNG.
+
+    "The file exists and is bigger than two kilobytes" was the whole test, and a
+    Wikimedia error page passes it comfortably -- so a rate limit or a renamed
+    file silently overwrote a good icon in the repository with a page of HTML,
+    and the only sign was a logo that had turned into nothing. Download beside
+    the target, check the magic number, check Pillow can decode it and that it
+    has the size that was asked for, and only then put it in place.
+    """
+    tmp = out + ".fetching"
+    try:
+        subprocess.run(["curl", "-sSL", "--max-time", "120", "-A", UA, "-o", tmp, url],
+                       capture_output=True)
+        if not os.path.exists(tmp) or os.path.getsize(tmp) < 2000:
+            return False
+        with open(tmp, "rb") as fh:
+            if fh.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+        with Image.open(tmp) as im:
+            im.load()
+            if min(im.size) < SIZE // 2:
+                return False
+        os.replace(tmp, out)
+        return True
+    except (OSError, ValueError, Image.UnidentifiedImageError):
+        return False
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def main():
-    if subprocess.run(["which", "rsvg-convert"], capture_output=True).returncode:
-        sys.exit("install librsvg2-bin")
+    if shutil.which("rsvg-convert") is None:
+        sys.exit("rsvg-convert is needed to rasterise the SVGs.\n"
+                 "  Debian/Ubuntu  sudo apt install librsvg2-bin\n"
+                 "  Fedora         sudo dnf install librsvg2-tools\n"
+                 "  Arch           sudo pacman -S librsvg\n"
+                 "  openSUSE       sudo zypper install rsvg-convert")
     svgdir = refind_source()
     if svgdir is None:
         sys.exit("rEFInd source not found -- run ./build-refind.sh first")
@@ -110,8 +140,13 @@ def main():
         "action": "query", "format": "json", "titles": "|".join(titles),
         "prop": "imageinfo", "iiprop": "url|extmetadata", "iiurlwidth": str(SIZE),
         "iiextmetadatafilter": "LicenseShortName"})
-    reply = json.loads(subprocess.run(["curl", "-sS", "--max-time", "60", "-A", UA, url],
-                                      capture_output=True, text=True).stdout)
+    answer = subprocess.run(["curl", "-sS", "--max-time", "60", "-A", UA, url],
+                            capture_output=True, text=True).stdout
+    try:
+        reply = json.loads(answer)
+    except ValueError:
+        sys.exit("Commons did not answer with JSON -- no network, or the API is refusing.\n"
+                 "Nothing was changed. The icons already in stock-icons/ are still there.")
     info = {}
     for page in reply.get("query", {}).get("pages", {}).values():
         if "missing" in page:

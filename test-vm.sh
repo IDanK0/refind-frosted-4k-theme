@@ -54,8 +54,17 @@ chown '"$(id -u):$(id -g)"' "$IMG"'
 # virtio-vga will not offer 3840x2160; the plain VGA device will, given the
 # memory for it. The theme allocates three screen-sized images, so testing at
 # the resolution the machine actually runs at is the point.
+# Either flag, in either order. This used to read --1080 out of $2 only, so
+# `./test-vm.sh --1080` -- the form the documentation gave -- silently ran at 4K.
 VIDEO="VGA,xres=3840,yres=2160,vgamem_mb=64"
-[ "${2:-}" = "--1080" ] && VIDEO="virtio-vga,xres=1920,yres=1080"
+WANT_SETTINGS=0
+for arg in "$@"; do
+    case "$arg" in
+        --1080)     VIDEO="virtio-vga,xres=1920,yres=1080" ;;
+        --settings) WANT_SETTINGS=1 ;;
+        *) echo "unknown option: $arg (try --settings, --1080)"; exit 2 ;;
+    esac
+done
 
 cp -f "$VARS" "$VM/vars.fd"
 rm -f "$VM/mon.sock" "$VM"/shot*.ppm
@@ -68,7 +77,7 @@ setsid qemu-system-x86_64 -machine q35 -m 2048 -smp 2 \
 QPID=$!
 sleep 16
 {
-    if [ "${1:-}" = "--settings" ]; then
+    if [ "$WANT_SETTINGS" = 1 ]; then
         echo "sendkey down"; sleep 1; echo "sendkey right"; sleep 1
         echo "sendkey ret";  sleep 3
     fi

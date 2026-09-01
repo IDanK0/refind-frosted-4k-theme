@@ -14,7 +14,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from build import (W, H, TILE, TILE1, XSP, YSP, ICON_OFF, R0Y, BIG, FROST,
-                   apply_frost, preview)
+                   apply_frost, preview, duotone, shades, read_tint)
 from plymouth import layout, dot, angle, NDOTS, DOT, RING, PERIOD
 
 IN_FRAMES, SEL_FRAMES, OUT_FRAMES, MOVE_FRAMES = 9, 5, 7, 14
@@ -22,6 +22,7 @@ IN_FRAMES, SEL_FRAMES, OUT_FRAMES, MOVE_FRAMES = 9, 5, 7, 14
 # of the easing curve, not the length of the animation: the bootloader runs each
 # one by the clock and draws as many frames as the machine manages.
 IN_STEP_MS, OUT_MS, MOVE_MS = 40, 280, 450
+IN_RISE    = 44          # ANIM_IN_RISE: how far a tile climbs into place, at 2160
 FRAME_MS   = 10
 FONT_H     = 52
 SHOTS      = os.path.join(HERE, "screenshots")
@@ -49,9 +50,30 @@ def menu_frame(icons, chosen=0):
     return im
 
 
-def save_gif(name, frames, ms):
-    frames = [f.resize(SCALE, Image.LANCZOS).quantize(colors=64, method=Image.MEDIANCUT)
-              for f in frames]
+def save_gif(name, frames, ms, scale=None):
+    """Write the animation as a GIF, without turning the photograph into a poster.
+
+    A GIF carries at most 256 colours. Asking for 64 of them, and choosing them
+    afresh for every frame, is what made these look like a different project
+    from the screenshots beside them: a dune lit by a low sun is a long smooth
+    ramp of one hue, and 64 entries cannot hold a ramp, so it came out as bands
+    of flat orange with the tile and the label pulled along with it -- and the
+    bands moved between frames, because each frame had picked its own 64.
+
+    So: one palette for the whole animation, chosen from every frame at once,
+    with all 256 entries, and Floyd-Steinberg to break up what is left. It costs
+    file size -- dithering is noise, and noise does not compress -- which is
+    why the frames are 960 wide and not 1920.
+    """
+    size   = scale or SCALE
+    frames = [f.resize(size, Image.LANCZOS).convert("RGB") for f in frames]
+
+    tall = Image.new("RGB", (size[0], size[1] * len(frames)))
+    for i, f in enumerate(frames):
+        tall.paste(f, (0, i * size[1]))
+    shared = tall.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
+
+    frames = [f.quantize(palette=shared, dither=Image.FLOYDSTEINBERG) for f in frames]
     path = os.path.join(SHOTS, name)
     frames[0].save(path, save_all=True, append_images=frames[1:],
                    duration=ms, loop=0, optimize=True)
@@ -75,14 +97,34 @@ def main():
         c = bg.copy()
         for i, ((x, y), s) in enumerate(zip(tiles, sizes)):
             a = ease_out(f - i, IN_FRAMES) if f > i else 0
-            box = (x, y, x + s, y + s)
-            c.paste(blend(bg.crop(box), menu.crop(box), a), box)
+            # The tile climbs as it fades: the same eased number does both, so
+            # it arrives exactly where it stops being transparent. menu.c
+            # crops one taller band of photograph per tile and slides the tile
+            # up it; here the band is simply the background we already have.
+            lift = min(IN_RISE, H - (y + s))
+            down = lift - (lift * a) // 256
+            box  = (x, y, x + s, y + s + lift)
+            band = bg.crop(box)
+            tile = menu.crop((x, y, x + s, y + s))
+            over = band.copy()
+            over.paste(tile, (0, down))
+            c.paste(blend(band, over, a), box)
         frames.append(c)
     save_gif("anim-in.gif", frames, IN_STEP_MS)
 
     # --- the menu leaving, and the chosen tile travelling to the middle
-    icon = Image.open(os.path.join(ASSETS, "icons", f"{icons[0]}.png")) \
-                .convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
+    # Colour it the way rEFInd will. The icons on disk are neutral -- the whole
+    # arrangement is that the bootloader takes the colour from the photograph at
+    # boot -- so a preview that skips that step shows Windows in Windows blue and
+    # the menu beside it in the colour of the sand, which is two pictures of two
+    # different programs.
+    tint  = read_tint(ASSETS)
+    table = shades(Image.open(os.path.join(ASSETS, "background.png")).convert("RGBA"),
+                   1.0)["ramp"] if tint else None
+    icon = Image.open(os.path.join(ASSETS, "icons", f"{icons[0]}.png")).convert("RGBA")
+    if tint:
+        icon = duotone(icon, table, tint / 100.0)
+    icon = icon.resize((BIG, BIG), Image.LANCZOS)
     dest_x, dest_y, cx, cy = layout(icon)
     from_x, from_y = tiles[0]
     strip_y = R0Y
@@ -116,15 +158,42 @@ def main():
         c.paste(tile_at(x, y), (x, y))
         frames.append(c)
 
+    # The tile has landed; from here only the ring turns.
+    #
+    # Every frame is drawn on the still, not on the frame before it. Drawing
+    # each one on its predecessor left the dots where they had been as well as
+    # where they were, so eighteen frames added up to a solid ring being traced
+    # out -- which is a perfectly nice animation, and not the one the bootloader
+    # runs.
+    landed = frames[-1].convert("RGBA")
     d = dot()
     for k in range(18):
-        c = frames[-1].copy().convert("RGBA")
+        c = landed.copy()
         for i in range(NDOTS):
             ang = angle(k * PERIOD / 18, i)
             c.alpha_composite(d, (int(cx + RING * math.cos(ang) - DOT / 2),
                                   int(cy + RING * math.sin(ang) - DOT / 2)))
         frames.append(c.convert("RGB"))
     save_gif("anim-handoff.gif", frames, (OUT_MS + MOVE_MS) // (OUT_FRAMES + MOVE_FRAMES))
+
+    # --- the ring on its own, close up
+    #
+    # This used to be a file in screenshots/ that nothing here produced, which
+    # meant the one picture in the README of the thing the ring actually does
+    # was the one picture that could not be checked against the code. It is the
+    # same dots on the same eased path as the splash above, cropped to the ring.
+    spin, span = [], int(RING * 2 + DOT * 3)
+    box = (int(cx - span / 2), int(cy - span / 2),
+           int(cx - span / 2) + span, int(cy - span / 2) + span)
+    plate = landed
+    for k in range(30):
+        c = plate.copy()
+        for i in range(NDOTS):
+            ang = angle(k * PERIOD / 30, i)
+            c.alpha_composite(d, (int(cx + RING * math.cos(ang) - DOT / 2),
+                                  int(cy + RING * math.sin(ang) - DOT / 2)))
+        spin.append(c.convert("RGB").crop(box))
+    save_gif("spinner.gif", spin, int(PERIOD * 1000 / 30), scale=(200, 200))
 
 
 if __name__ == "__main__":

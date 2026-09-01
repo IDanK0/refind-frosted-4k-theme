@@ -26,7 +26,14 @@ started.
     ./check-photos.py '~/Pictures/*.jpg'
 """
 import glob, os, sys, math, json
-import numpy as np
+try:
+    import numpy as np
+except ModuleNotFoundError:
+    raise SystemExit("this one needs numpy:\n"
+                     "  Debian/Ubuntu  sudo apt install python3-numpy\n"
+                     "  Fedora         sudo dnf install python3-numpy\n"
+                     "  Arch           sudo pacman -S python-numpy\n"
+                     "  or             pip install numpy")
 from PIL import Image
 
 W, H = 3840, 2160
@@ -72,8 +79,17 @@ def sharpness(im):
     above = np.where(p > floor*3)[0]
     return (above[-1]/c) if len(above) else 0.0
 
+if len(sys.argv) < 2:
+    sys.exit("usage: ./check-photos.py 'library/*.jpg' [out.json]\n"
+             "The pattern is quoted so this program expands it, not the shell.")
+
 rows=[]
-for f in sorted(glob.glob(sys.argv[1])):
+# expanduser, because the pattern is quoted to keep the shell off it -- and a
+# quoted ~ is a directory called "~", which matches nothing and measures nothing.
+for f in sorted(glob.glob(os.path.expanduser(sys.argv[1]))):
+    # a contact sheet of the library is not a member of it
+    if os.path.basename(f) == "preview-sheet.jpg":
+        continue
     im = fit(f)
     Y,c1,c2 = planes(im)
     rows.append(dict(file=f, lum=immerkaer(Y), chroma=(immerkaer(c1)+immerkaer(c2))/2,

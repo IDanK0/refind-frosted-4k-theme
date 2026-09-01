@@ -1,0 +1,9 @@
+# The rEFInd 0.14.2 source tarball this project patches, by content.
+#
+# build-refind.sh downloads it from SourceForge over TLS and then compiles the
+# result into the program that starts the machine. TLS says the bytes arrived
+# from the host they were asked for; it does not say the host is serving what it
+# served the day this patch was written. This does.
+#
+# Verified against https://sourceforge.net/projects/refind/files/0.14.2/refind-src-0.14.2.tar.gz
+f7d93ce80da76b86c567281ea225b6a87907ce86ff77233c9357a522c115c8f0  refind-src-0.14.2.tar.gz

@@ -16,3 +16,12 @@ library/.preview/
 
 # the virtual machine test-vm.sh builds
 vm/
+
+# the rEFInd source tree and binary build-refind.sh makes
+build/
+
+# artwork build.py and plymouth.py generate. Not tracked: it is derived from
+# whichever photograph you choose, it is 18 MB, and a checked-in copy is a copy
+# that goes stale the first time the generator changes -- which it did.
+assets/
+plymouth/
