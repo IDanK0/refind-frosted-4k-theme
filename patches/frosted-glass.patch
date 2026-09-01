@@ -1,15 +1,15 @@
 diff -urN a/EfiLib/gnuefi-helper.c b/EfiLib/gnuefi-helper.c
 --- a/EfiLib/gnuefi-helper.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/EfiLib/gnuefi-helper.c	2026-09-01 20:36:25.786862641 +0200
++++ b/EfiLib/gnuefi-helper.c	2026-09-02 00:26:50.973583907 +0200
 @@ -109,6 +109,19 @@
    @return The length of String.
  
  **/
 +// gnu-efi grew its own AsciiStrLen in 4.0.0, and rEFInd's copy then collides
 +// with it. Removing rEFInd's copy outright fixes the collision and breaks every
-+// distribution still on gnu-efi 3.x -- which as of this writing is Debian 13,
++// distribution still on gnu-efi 3.x, which as of this writing is Debian 13,
 +// Ubuntu up to 25.10, every released Fedora, RHEL and its rebuilds, openSUSE
-+// Leap, Void, Solus and Alpine before 3.22 -- because EfiLib/legacy.c calls it
++// Leap, Void, Solus and Alpine before 3.22, because EfiLib/legacy.c calls it
 +// and nothing else defines it. So ask the header which one is installed.
 +//
 +// There is no version macro to ask. There is a better question: 4.x ends its
@@ -52,7 +52,7 @@ diff -urN a/Make.common b/Make.common
  #
 diff -urN a/libeg/image.c b/libeg/image.c
 --- a/libeg/image.c	2024-04-04 00:04:55.000000000 +0200
-+++ b/libeg/image.c	2026-09-01 20:33:32.526884398 +0200
++++ b/libeg/image.c	2026-09-02 00:26:50.974155657 +0200
 @@ -632,6 +632,131 @@
      }
  }
@@ -137,7 +137,7 @@ diff -urN a/libeg/image.c b/libeg/image.c
 +
 +    A = (EG_PIXEL *) AllocatePool(Total * sizeof(EG_PIXEL));
 +    B = (EG_PIXEL *) AllocatePool(Total * sizeof(EG_PIXEL));
-+    // MyFreePool() takes the pointer, not the address of it -- it is FreePool()
++    // MyFreePool() takes the pointer, not the address of it: it is FreePool()
 +    // with a NULL check, and every other caller in the tree passes it plainly.
 +    // Passing &A handed the firmware a stack address to free and leaked both
 +    // buffers, which at a 617-pixel tile is three megabytes for every tile
@@ -219,7 +219,7 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
  BOOLEAN egSetTextMode(UINT32 RequestedMode);
 diff -urN a/libeg/screen.c b/libeg/screen.c
 --- a/libeg/screen.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/screen.c	2026-09-01 20:46:56.960689801 +0200
++++ b/libeg/screen.c	2026-09-02 00:28:31.670852261 +0200
 @@ -163,6 +163,82 @@
  // Stores the results in the file-global variables egScreenWidth,
  // egScreenHeight, and egHasGraphics. The first two of these will be
@@ -238,7 +238,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +// system sets on the same memory once it takes over, and it is a ten-fold
 +// difference on real hardware. The CPU architectural protocol is how a UEFI
 +// program asks for it. If the firmware does not offer that protocol, or refuses,
-+// nothing changes and nothing breaks -- the screen is simply as slow as it was.
++// nothing changes and nothing breaks; the screen is simply as slow as it was.
 +#define EFI_MEMORY_WC_ATTR  ((UINT64) 0x0000000000000002ULL)
 +
 +typedef struct _REFIND_CPU_ARCH_PROTOCOL REFIND_CPU_ARCH_PROTOCOL;
@@ -282,8 +282,8 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +    // worth the name it is the same for every mode. What changes when the mode
 +    // changes is the size: the spec defines FrameBufferSize as the memory the
 +    // *active* mode needs. Testing the address alone meant this ran once, at
-+    // whatever resolution the firmware powered up in -- 800x600 in the test
-+    // machine, 1024x768 on plenty of real ones -- and marked two or three
++    // whatever resolution the firmware powered up in. 800x600 in the test
++    // machine, 1024x768 on plenty of real ones, and marked two or three
 +    // megabytes as write-combining. The menu then switched to the mode it wanted
 +    // and drew thirty-three megabytes a screen, all but the first three of them
 +    // through uncached memory, and the guard said the work was already done.
@@ -378,7 +378,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +//
 +// FrostMask, if given, is a stencil of a sheet of glass: the background is
 +// blurred wherever the mask is opaque, before the icon is composited over it.
-+// Pass NULL for anything that is not glass -- text, arrows, the mouse pointer.
++// Pass NULL for anything that is not glass: text, arrows, the mouse pointer.
  VOID egDrawImageWithTransparency(EG_IMAGE *Image, EG_IMAGE *BadgeImage,
 -                                 UINTN XPos, UINTN YPos, UINTN Width, UINTN Height) {
 +                                 UINTN XPos, UINTN YPos, UINTN Width, UINTN Height,
@@ -397,9 +397,9 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +//
 +// GraphicsOutput->Blt() is firmware code that touches every pixel, and at
 +// 3840x2160 a whole screen is eight million of them. But the GOP also publishes
-+// where the framebuffer actually is, and when its format is BGRX -- which is
++// where the framebuffer actually is, and when its format is BGRX, which is
 +// what essentially every machine reports, and exactly the layout EG_PIXEL
-+// already uses -- a row of an image is a row of the screen and the whole
++// already uses. A row of an image is a row of the screen and the whole
 +// operation is one memory copy per line.
 +//
 +// Everything is checked before taking this path: the format, that there is a
@@ -484,7 +484,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +// A framebuffer is quick to write and desperately slow to read: a write is
 +// posted and forgotten, a read is a round trip to the card that nothing can
 +// buffer. The cross-fade on the way to an operating system begins by reading
-+// back the band the menu lives in -- thirteen megabytes -- and that read is the
++// back the band the menu lives in, thirteen megabytes, and that read is the
 +// pause between pressing Enter and seeing anything happen.
 +//
 +// So nothing is ever read back. Every write to the screen is mirrored here, and
@@ -493,7 +493,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +// is what the reader wanted to know.
 +//
 +// It is only trusted once a whole screen has gone through it, and it is dropped
-+// whenever something else might have drawn -- text mode, or a program rEFInd
++// whenever something else might have drawn: text mode, or a program rEFInd
 +// launched and came back from.
 +static EG_IMAGE *Shadow      = NULL;
 +static BOOLEAN   ShadowValid = FALSE;
@@ -726,7 +726,7 @@ diff -urN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -urN a/refind/bgrt.c b/refind/bgrt.c
 --- a/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/bgrt.c	2026-09-01 21:38:36.500354345 +0200
++++ b/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
 @@ -0,0 +1,328 @@
 +/*
 + * refind/bgrt.c
@@ -738,7 +738,7 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 + * Every other system this menu boots can be given a splash by installing
 + * something inside it. Windows cannot: there is no initramfs to put a theme in
 + * and no theme to put there. But Windows does not choose the picture it shows
-+ * while it starts either -- it reads one out of an ACPI table called BGRT, the
++ * while it starts either; it reads one out of an ACPI table called BGRT, the
 + * Boot Graphics Resource Table, which the firmware fills in with the maker's
 + * logo. That is why a laptop shows its own badge during a Windows boot and not
 + * a Windows one.
@@ -746,7 +746,7 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 + * A bootloader is the last thing to run before the operating system, so it is
 + * the last thing that can write to that table. Put the screen there and Windows
 + * shows the screen. It needs nothing installed, survives Windows being
-+ * reinstalled, and works for anything else that reads the table -- Linux does
++ * reinstalled, and works for anything else that reads the table. Linux does
 + * too, which is what makes it testable without booting Windows at all.
 + *
 + * Windows keeps drawing its own ring of dots underneath, and there is no way to
@@ -868,8 +868,8 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    //
 +    // Everything that follows is an address read out of firmware-supplied memory
 +    // and then dereferenced. On a machine whose configuration table points at
-+    // something that is not an RSDP -- a table left behind by an earlier
-+    // bootloader, a firmware bug, a deliberately malformed one -- following it
++    // something that is not an RSDP; a table left behind by an earlier
++    // bootloader, a firmware bug, a deliberately malformed one: following it
 +    // reads whatever those eight bytes happened to be, as a pointer. The cost of
 +    // being sure is thirty bytes of arithmetic, once, and the cost of not being
 +    // sure is a machine that hangs before it boots.
@@ -931,15 +931,15 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +//
 +// Not in the memory that is never reclaimed, which was the careful-looking
 +// choice and the wrong one: Linux refuses a BGRT whose image is anywhere but
-+// EFI_BOOT_SERVICES_DATA -- "Ignoring BGRT: invalid image address" -- because
++// EFI_BOOT_SERVICES_DATA, "Ignoring BGRT: invalid image address", because
 +// that is what firmware does, and a table pointing anywhere else is more likely
 +// to be wrong than to be clever. Nothing is lost by obeying: the pages stay
 +// allocated because they are never freed, Windows reads them while boot
 +// services are still alive, and Linux reserves them for itself the moment it
 +// accepts the table.
 +// The last one handed over, so a second attempt does not abandon the first.
-+// A launch that fails -- a loader that has been moved, a kernel that is not
-+// there -- comes back to the menu, and the next attempt used to allocate
++// A launch that fails. A loader that has been moved, a kernel that is not
++// there; comes back to the menu, and the next attempt used to allocate
 +// another twenty-five megabytes and forget the address of the one before it.
 +static EFI_PHYSICAL_ADDRESS LastBmp = 0;
 +static UINTN                LastPages = 0;
@@ -968,7 +968,7 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +
 +    // Only now give back the previous one. Freeing it first and then failing to
 +    // allocate would have thrown away a working boot logo to make room for one
-+    // that was never made -- and the table would still be pointing at the memory
++    // that was never made, and the table would still be pointing at the memory
 +    // that had just been released. Nothing can still be reading the old one: its
 +    // only consumer is the system this is about to hand the machine to, and if
 +    // that had happened this code would not be running.
@@ -981,7 +981,7 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    // that are zero.
 +    //
 +    // They were left to SetMem() first, and came out full of whatever the pages
-+    // had held before -- a header correct in the fields this code wrote and
++    // had held before; a header correct in the fields this code wrote and
 +    // wrong in the fields it did not, which is a memorable shape for a bug, and
 +    // which Linux reported as "Unsupported BMP compression". Why the fill did
 +    // not happen was never established; writing every byte on purpose is
@@ -1058,7 +1058,7 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +} // VOID SetBootLogo()
 diff -urN a/refind/bgrt.h b/refind/bgrt.h
 --- a/refind/bgrt.h	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/bgrt.h	2026-09-01 16:28:02.364445986 +0200
++++ b/refind/bgrt.h	1970-01-01 01:00:00.000000000 +0100
 @@ -0,0 +1,14 @@
 +/*
 + * refind/bgrt.h
@@ -1076,7 +1076,7 @@ diff -urN a/refind/bgrt.h b/refind/bgrt.h
 +#endif
 diff -urN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-09-01 21:08:56.509619384 +0200
++++ b/refind/config.c	2026-09-02 00:26:50.976935041 +0200
 @@ -548,6 +548,26 @@
          MyFreePool(GlobalConfig.DefaultSelection);
          GlobalConfig.DefaultSelection = StrDuplicate(L"+");
@@ -1085,7 +1085,7 @@ diff -urN a/refind/config.c b/refind/config.c
 +        // Everything this theme adds, set to what its documentation says it is.
 +        //
 +        // C leaves the tail of a partly-written struct initialiser at zero, and
-+        // the tail of GlobalConfig is where all of these live -- so without this
++        // the tail of GlobalConfig is where all of these live, so without this
 +        // the compiled-in default for every one of them was off: no frost, no
 +        // animation, no splash, no boot logo, an undimmed photograph and logos
 +        // in their own brand colours. That is invisible as long as the
@@ -1293,7 +1293,7 @@ diff -urN a/refind/main.c b/refind/main.c
                     MainLoopRunning = FALSE;   // just in case we get this far
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-09-01 22:24:42.918545065 +0200
++++ b/refind/menu.c	2026-09-02 00:26:50.977475322 +0200
 @@ -59,7 +59,9 @@
  #include "screen.h"
  #include "lib.h"
@@ -1385,7 +1385,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +
 +    // Load the frosted-glass stencils. These are scaled to the *icon* size, not
 +    // the tile size, because egFrostImage() centres them the way
-+    // BltImageCompositeBadge() centres the icon -- so a stencil drawn against
++    // BltImageCompositeBadge() centres the icon, so a stencil drawn against
 +    // the icon's own geometry lands exactly on the icon's glass panel.
 +    if (GlobalConfig.FrostMaskBigFileName != NULL) {
 +        TempFrostImage = egLoadImage(SelfDir, GlobalConfig.FrostMaskBigFileName, TRUE);
@@ -1498,7 +1498,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +#define ANIM_MOVE_US     (450000)
 +// The shortest a frame is held. Sixteen milliseconds is about sixty a second,
 +// which is near enough to what a screen refreshes at that a tear line stays
-+// roughly where it is instead of rolling up the picture -- a still seam being
++// roughly where it is instead of rolling up the picture. A still seam being
 +// far less noticeable than a moving one. There is no way to actually wait for
 +// the refresh: UEFI has no notion of one, so anything moving across a
 +// framebuffer can be caught half-drawn, and the only levers are how much is
@@ -1521,19 +1521,19 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// That is only the same thing as time on a machine where drawing is free. It is
 +// not: at 3840x2160 the firmware's framebuffer is memory the processor cannot
 +// cache, and a frame can take longer to appear than the pause that follows it.
-+// Counting frames on such a machine stretches every animation -- half the speed,
-+// twice the length -- and that is exactly what "laggy" means.
++// Counting frames on such a machine stretches every animation; half the speed,
++// twice the length, and that is exactly what "laggy" means.
 +//
 +// So ask the processor what time it is. TSC is a plain counter of cycles; how
 +// many of them make a microsecond is learned once, from a stall of known length.
 +// Every animation then runs for the time it is supposed to take, drawing however
-+// many frames fit -- fewer on a slow display, more on a fast one, the same
++// many frames fit; fewer on a slow display, more on a fast one, the same
 +// duration on both.
 +static UINT64 TicksPerUs = 0;
 +
 +// One counter that goes up, whatever the processor is. It does not matter what
 +// it counts or how fast, because StartClock() below measures that against a
-+// stall of known length -- but it does have to exist, and `rdtsc` with no guard
++// stall of known length, but it does have to exist, and `rdtsc` with no guard
 +// around it means this file cannot even be compiled for anything but x86.
 +static UINT64 ReadTicks(VOID) {
 +#if defined(__x86_64__) || defined(__i386__)
@@ -1595,8 +1595,8 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// Wait until the frame's slot is up, so a fast machine does not spin the whole
 +// animation past in three frames. Returns FALSE when the animation should stop.
 +//
-+// MayStop is for the animations you are browsing through -- the menu arriving,
-+// the selection moving -- which must never stand between you and the next
++// MayStop is for the animations you are browsing through; the menu arriving,
++// the selection moving, which must never stand between you and the next
 +// keystroke. It is FALSE on the way to an operating system: that choice is
 +// already made, and a key still in the firmware's buffer from holding Enter a
 +// moment too long is not a reason to skip the whole thing.
@@ -1679,8 +1679,8 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    BlendBlitAt(From, To, Alpha, XPos, YPos, 0);
 +}
 +
-+// Frosting a tile is the expensive part of drawing one -- four box passes and
-+// two transposes over 380,000 pixels -- and it depends only on where the tile
++// Frosting a tile is the expensive part of drawing one; four box passes and
++// two transposes over 380,000 pixels, and it depends only on where the tile
 +// is, never on which frame it is or whether it is selected. Every arrow key was
 +// paying for two of them. They are kept instead, and thrown away when the
 +// background changes.
@@ -1795,7 +1795,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// A monitor takes a second or two to lock onto a mode, and shows nothing at all
 +// until it has. The firmware is drawing the whole time, so on a slow display the
 +// menu's arrival happens entirely inside that darkness and the first thing
-+// anybody sees is a finished menu -- which looks exactly like an animation that
++// anybody sees is a finished menu, which looks exactly like an animation that
 +// was never written. The photograph is already up by the time this is called, so
 +// what the wait costs is a beat of wallpaper before the menu lands on it, and a
 +// key ends it immediately.
@@ -1845,7 +1845,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +            continue;
 +        // The band of photograph the tile travels over. It cannot reach past the
 +        // bottom of the background, and on a short screen there may be no room
-+        // at all -- in which case that tile simply fades where it stands.
++        // at all: in which case that tile simply fades where it stands.
 +        Room = (GlobalConfig.ScreenBackground != NULL &&
 +                GlobalConfig.ScreenBackground->Height > (Y[Count] + Tile[Count]->Height))
 +             ? GlobalConfig.ScreenBackground->Height - (Y[Count] + Tile[Count]->Height) : 0;
@@ -1979,7 +1979,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// The handoff splash
 +//
 +// Plymouth cannot do this. It lives inside Ubuntu's initramfs and only runs
-+// when Ubuntu is what you picked -- so it can never be the boot logo of
++// when Ubuntu is what you picked, so it can never be the boot logo of
 +// Windows, or of a stick plugged in this morning. rEFInd is the one thing that
 +// runs before every one of them, and it already holds, for each entry it found,
 +// the icon carrying that system's logo and name. So the splash belongs here,
@@ -1988,7 +1988,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// No floating point: rEFInd is an EFI application and does not set up the FPU,
 +// so the whole animation is fixed point. Angles are in 4096ths of a turn and
 +// sines are 4096ths of one, read from a quarter-wave table with linear
-+// interpolation -- under a pixel of error on a radius of 110.
++// interpolation. Under a pixel of error on a radius of 110.
 +
 +#define SPIN_DOTS    (6)
 +#define SPIN_PERIOD  (1800)   // milliseconds for one turn
@@ -2189,7 +2189,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    egFreeImage(StripBg);
 +    egFreeImage(Held);
 +
-+    // whatever the strip did not reach -- hints along the bottom, if they are shown
++    // whatever the strip did not reach; hints along the bottom, if they are shown
 +    if (StripY + StripH < UGAHeight) {
 +        Rest = egCropImage(GlobalConfig.ScreenBackground, 0, StripY + StripH,
 +                           UGAWidth, UGAHeight - StripY - StripH);
@@ -2237,7 +2237,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    // Land it.
 +    //
 +    // The loop stops when the time is up, and the last frame it drew was at
-+    // whatever fraction of the way the clock had reached -- never at 256/256.
++    // whatever fraction of the way the clock had reached: never at 256/256.
 +    // So the tile came to rest a few pixels short of the middle, and the splash
 +    // then drew its own tile at the middle on top: two tiles, slightly offset,
 +    // one of them a ghost. On a slow machine, where only a handful of frames
@@ -2269,7 +2269,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    // that: it meant leave the function, which took bgrt_logo with it, so a
 +    // configuration that asked for the boot logo and no waiting got neither and
 +    // was told nothing. The picture handed to the next system is the picture on
-+    // the screen, so it still has to be drawn -- but only for the instant it
++    // the screen, so it still has to be drawn, but only for the instant it
 +    // takes to read it back, because the loop below runs while Elapsed is under
 +    // HandoffSplash, and with nothing to wait for it does not run at all.
 +    if ((GlobalConfig.HandoffSplash == 0) && !GlobalConfig.BgrtLogo)
@@ -2286,12 +2286,12 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    // the tile is not the same as centring the picture. The panel sits high
 +    // inside the icon with the name beneath it, and the ring hangs below that
 +    // again, so a tile in the middle of the screen leaves the group people
-+    // actually look at sitting low -- by 195 px at 3840x2160. Measure the ink
++    // actually look at sitting low. By 195 px at 3840x2160. Measure the ink
 +    // instead of the boxes and shift the whole group until it is centred; taking
 +    // the top from the icon's own alpha keeps that true for an icon with a
 +    // longer name, or with none.
 +    TileX   = (UGAWidth + TILE_XSPACING - (TileSizes[0] + TILE_XSPACING)) / 2;
-+    // 140px across at 3840x2160 -- 6.5% of the height, the size Windows draws
++    // 140px across at 3840x2160; 6.5% of the height, the size Windows draws
 +    // its spinner. It was 10% before, which reads as a hoop rather than a
 +    // spinner. plymouth.py carries the same two numbers so the ring rEFInd
 +    // turns and the ring the system turns after it are one ring.
@@ -2496,7 +2496,7 @@ diff -urN a/refind/menu.h b/refind/menu.h
 +VOID TimeSinceKey(IN CHAR16 *What);
 diff -urN a/refind/scan.c b/refind/scan.c
 --- a/refind/scan.c	2024-04-04 17:18:11.000000000 +0200
-+++ b/refind/scan.c	2026-08-31 01:40:32.913116668 +0200
++++ b/refind/scan.c	2026-09-02 00:28:36.662745206 +0200
 @@ -114,6 +114,7 @@
  EFI_GUID GlobalGuid = EFI_GLOBAL_VARIABLE;
  
@@ -2515,7 +2515,7 @@ diff -urN a/refind/scan.c b/refind/scan.c
      Entry = InitializeLoaderEntry(NULL);
      if (Entry != NULL) {
 +        // A loader that arrives without a title of its own is labelled with its
-+        // own path -- "EFI\ubuntu\grubx64.efi" -- which names a file, not a
++        // own path, "EFI\ubuntu\grubx64.efi", which names a file, not a
 +        // system. rEFInd already reads the system out of that same path to pick
 +        // the icon: SetLoaderDefaults() takes FindLastDirName() as its first icon
 +        // hint, which is exactly why the Ubuntu entry gets the Ubuntu logo. Read
@@ -2570,7 +2570,7 @@ diff -urN a/refind/scan.c b/refind/scan.c
                !IsValidLoader(Volume->RootDir, FullName)) {
 +                // A loader refused here must not walk back in under another name.
 +                // EFI\BOOT\bootx64.efi is very often a byte-for-byte copy of the
-+                // shim just skipped -- shimx64.efi is in DONT_SCAN_FILES -- and the
++                // shim just skipped, shimx64.efi is in DONT_SCAN_FILES, and the
 +                // fallback check below only ever sees files that were accepted, so
 +                // rEFInd ends up refusing a program and offering the identical copy
 +                // of it as "Fallback boot loader". Test for that where the refusal
@@ -2634,7 +2634,7 @@ diff -urN a/refind/scan.c b/refind/scan.c
              case TAG_FWUPDATE_TOOL:
 diff -urN a/refind/screen.c b/refind/screen.c
 --- a/refind/screen.c	2024-03-23 23:21:19.000000000 +0100
-+++ b/refind/screen.c	2026-08-31 16:02:47.049336483 +0200
++++ b/refind/screen.c	2026-09-02 00:26:50.976745422 +0200
 @@ -64,6 +64,7 @@
  #include "mystrings.h"
  #include "log.h"
@@ -2673,7 +2673,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
 +        // Hand the next program a black screen.
 +        //
 +        // BltClearScreen(FALSE) fills the screen with MenuBackgroundPixel, which
-+        // is set to Banner->PixelData[0] -- the top-left pixel of the background
++        // is set to Banner->PixelData[0]; the top-left pixel of the background
 +        // image. That is a sensible colour to extend a banner with, and a
 +        // terrible one to leave behind: a boot loader that draws its own logo
 +        // draws it over whatever is already in the framebuffer, and never clears
@@ -2700,7 +2700,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
  }
  
 +// The picture the theme is currently using. When this is set it is the banner,
-+// and the file named in refind.conf is not consulted -- that is what lets the
++// and the file named in refind.conf is not consulted. That is what lets the
 +// settings screen change the background without a reboot.
 +EG_IMAGE *ThemeBanner = NULL;
 +static EG_IMAGE *Banner = NULL;
@@ -2746,7 +2746,7 @@ diff -urN a/refind/screen.c b/refind/screen.c
 -        else
 -           egClearScreen(&Black);
 +        // Clear and draw banner. A banner that covers the screen makes the clear
-+        // pure waste -- a whole extra full-screen write before the write that
++        // pure waste; a whole extra full-screen write before the write that
 +        // hides it, which at 3840x2160 is a third of a second of visible wipe.
 +        if ((Banner == NULL) || (Banner->Width < UGAWidth) || (Banner->Height < UGAHeight)) {
 +            if (GlobalConfig.ScreensaverTime != -1)
@@ -2789,7 +2789,7 @@ diff -urN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -urN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-09-01 23:30:51.144435585 +0200
++++ b/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
 @@ -0,0 +1,1101 @@
 +/*
 + * refind/theme.c
@@ -2797,11 +2797,11 @@ diff -urN a/refind/theme.c b/refind/theme.c
 + *
 + * Everything here used to be done by a Python program on the installed Linux,
 + * which meant the boot menu could only be re-themed from one particular
-+ * operating system -- an odd dependency for the thing that starts all of them.
++ * operating system. An odd dependency for the thing that starts all of them.
 + * The shapes are still drawn ahead of time, because drawing rounded glass and
 + * compositing forty-seven logos is not work for a bootloader. The colours are
 + * not: they are read off the photograph here, at boot, so a picture dropped into
-+ * EFI\refind\backgrounds from anything at all -- including Windows -- is themed
++ * EFI\refind\backgrounds from anything at all, including Windows, is themed
 + * exactly like the ones that shipped.
 + *
 + * There is no floating point in an EFI application, and no trigonometry either.
@@ -2831,8 +2831,8 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +#define CHROMA_CEILING   (52)
 +// How much of the peak chroma the ends of the ramp keep, in 255ths. Not zero: a
 +// duotone whose chroma vanishes at both ends turns everything white back into
-+// grey, and the white things here -- the names, the rim of the glass, the dots
-+// of the spinner -- are most of what carries the colour.
++// grey, and the white things here: the names, the rim of the glass, the dots
++// of the spinner; are most of what carries the colour.
 +#define RAMP_END         (107)
 +
 +static EG_PIXEL  Ramp[RAMP_STEPS];
@@ -2934,7 +2934,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +        return;
 +    // Bring the sums back down before squaring them. Sixty thousand samples of
 +    // up to a few million each square to more than a 64-bit integer holds, and
-+    // the wrap makes the length negative -- which used to be a hang and is now
++    // the wrap makes the length negative, which used to be a hang and is now
 +    // merely wrong, so it must not happen at all.
 +    Ax = (INTN) (Ax / Count);
 +    Ay = (INTN) (Ay / Count);
@@ -2951,7 +2951,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +// The ramp a logo is laid along: dark at the bottom of its own range, light at
 +// the top, and the colour fullest in the middle. A straight line between a dark
 +// colour and a light one passes through their average, which is close to grey,
-+// and the middle of the range is exactly where a logo sits -- so a straight ramp
++// and the middle of the range is exactly where a logo sits, so a straight ramp
 +// takes the colour out of the one part anybody looks at.
 +static VOID BuildRamp(IN INTN *Dir, IN INTN Chroma) {
 +    UINTN i;
@@ -2983,8 +2983,8 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +
 +// Lay an image along the ramp by its own lightness, then mix that back with the
 +// original. The shape and its internal contrast are untouched; only the colour
-+// moves. Strength 0 returns the artwork as it was drawn -- Windows blue, Ubuntu
-+// orange -- which is what turning the setting off has to mean.
++// moves. Strength 0 returns the artwork as it was drawn: Windows blue, Ubuntu
++// orange, which is what turning the setting off has to mean.
 +static EG_IMAGE * TintCopy(IN EG_IMAGE *Src, IN UINTN Strength) {
 +    EG_IMAGE *Out;
 +    UINTN     i, n, Rev;
@@ -3052,7 +3052,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +// Remember the artwork as it arrived, once, so every later tint starts from it.
 +//
 +// These are BORROWED, never owned. A tool's icon comes from BuiltinIcon(), which
-+// hands back the pointer in its own cache rather than a copy -- and several
++// hands back the pointer in its own cache rather than a copy, and several
 +// tools can be handed the same one. Freeing what is in an entry is therefore
 +// freeing somebody else's image, twice over for a shared one, and a corrupted
 +// heap turns every later allocation into a failure. Which is what emptied the
@@ -3263,8 +3263,8 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +// which is fine and looks nothing like the rest of this. Everything below draws
 +// them the way the tiles are drawn: the photograph frosted behind a rounded
 +// pane, a lit rim, the theme's colours, and the selected row on a rounded bar.
-+// One style function serves all of them -- settings, about, hidden tags, the
-+// boot-options sub-screens -- so there is no second appearance to keep in step.
++// One style function serves all of them; settings, about, hidden tags, the
++// boot-options sub-screens, so there is no second appearance to keep in step.
 +//
 +
 +#define PANEL_GLASS  (26)     // the pane's own tint
@@ -3313,7 +3313,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    // In eighths of a pixel: the corner's centre sits at 8*Radius and its radius
 +    // is 8*Radius, so the square of it is 64*Radius*Radius. Sixteen would be a
 +    // corner of half the size, which leaves the outside of the corner box
-+    // uncovered -- a rounded rectangle with the corners bitten out of it.
++    // uncovered; a rounded rectangle with the corners bitten out of it.
 +    R2 = 64 * (INTN) Radius * (INTN) Radius;
 +    for (y = 0; y < Radius; y++) {
 +        for (x = 0; x < Radius; x++) {
@@ -3460,7 +3460,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    return (w > 0) ? w : 8;
 +}
 +
-+// Compose the whole panel -- glass, title, lines, rows -- and put it up in one
++// Compose the whole panel, glass, title, lines, rows, and put it up in one
 +// piece. Drawing it in parts is what makes a menu flicker; this way the screen
 +// changes once.
 +static VOID PaintPanel(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State) {
@@ -3585,7 +3585,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +// Every photograph sitting in EFI/refind/backgrounds, as an array.
 +//
 +// It used to be one string with commas between the names, which is how rEFInd
-+// keeps lists -- and it worked until somebody dropped in a file with a comma in
++// keeps lists, and it worked until somebody dropped in a file with a comma in
 +// its name, at which point one photograph became two and the count no longer
 +// matched the list. A directory can hold any name FAT allows; the code that
 +// reads it should not care which.
@@ -3627,7 +3627,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    MyFreePool(List);
 +} // VOID FreeBackgrounds()
 +
-+// "My Photograph.jpg" -- with any quote in the name doubled, which is how
++// "My Photograph.jpg": with any quote in the name doubled, which is how
 +// rEFInd's parser escapes one. Returns NULL only if there is nothing to quote.
 +static CHAR16 * QuoteForConfig(IN CHAR16 *Name) {
 +    CHAR16 *Out;
@@ -3677,7 +3677,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +        return FALSE;
 +    // The name goes in quotes. rEFInd's own tokeniser breaks a line on spaces,
 +    // tabs, equals signs and commas, and a photograph copied on from a desktop
-+    // is as likely as not to be called something with a space in it -- so an
++    // is as likely as not to be called something with a space in it, so an
 +    // unquoted name meant the settings screen could save a choice that the next
 +    // boot could not read back. A quote inside a name is written twice, which
 +    // is how the same tokeniser escapes one.
@@ -3735,7 +3735,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +// The point is the order of events. Changing a setting means re-reading a
 +// photograph and dimming eight million pixels, and doing that before drawing
 +// anything means the screen sits still from the keypress until the work is
-+// done -- which reads as the machine having missed the key. Drawing first
++// done, which reads as the machine having missed the key. Drawing first
 +// costs a fifth of a second and answers immediately; the photograph follows
 +// when it is ready.
 +static VOID ShowPanelNow(IN REFIT_MENU_SCREEN *Screen, IN INTN Selected) {
@@ -3743,7 +3743,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +
 +    if (!AllowGraphicsMode || (Screen->EntryCount == 0))
 +        return;
-+    // INIT calls InitScroll(), which sets CurrentSelection back to 0 -- so the
++    // INIT calls InitScroll(), which sets CurrentSelection back to 0, so the
 +    // row to highlight has to be chosen after it, not before. Setting it first
 +    // meant this panel, the one drawn immediately to answer the keypress, always
 +    // highlighted the top row, and the row the user was actually on only
@@ -3831,7 +3831,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +        if (Saved == 1)
 +            Rows[5]->Title = StrDuplicate(L"Saved. Press Esc to return");
 +        else if (Saved == 0)
-+            Rows[5]->Title = StrDuplicate(L"Could not write theme.conf -- is the EFI partition full?");
++            Rows[5]->Title = StrDuplicate(L"Could not write theme.conf. Is the EFI partition full?");
 +        else
 +            Rows[5]->Title = StrDuplicate(L"Save these for next time");
 +        for (i = 0; i < 6; i++) {
@@ -3894,7 +3894,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +} // VOID ShowSettingsMenu()
 diff -urN a/refind/theme.h b/refind/theme.h
 --- a/refind/theme.h	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.h	2026-08-31 14:09:26.512463547 +0200
++++ b/refind/theme.h	1970-01-01 01:00:00.000000000 +0100
 @@ -0,0 +1,37 @@
 +/*
 + * refind/theme.h

@@ -11,9 +11,9 @@ Pick **Settings** in the tool row.
 | | |
 |---|---|
 | **Background** | every picture in the menu's own `backgrounds/` on the EFI partition, in turn |
-| **Dimming** | automatic, or 0–80% by hand |
-| **Frosted glass** | 0–32, how far the glass scatters what is behind it |
-| **Colour from photo** | 0–100%, how far the logos and labels move towards the picture's own colour |
+| **Dimming** | automatic, or 0-80% by hand |
+| **Frosted glass** | 0-32, how far the glass scatters what is behind it |
+| **Colour from photo** | 0-100%, how far the logos and labels move towards the picture's own colour |
 | **Animations** | on or off |
 | **Save these for next time** | writes `theme.conf` beside the menu on the EFI partition |
 

@@ -297,7 +297,7 @@ both times, 11 MB/s. That is a framebuffer being read, not a program being slow.
 `egDrawImage()` now goes through `egDrawImageArea()` like everything else. The
 same machine, the same log, the next boot:
 
-| from the keypress to… | before | after |
+| from the keypress to | before | after |
 |---|---|---|
 | the handoff ready to draw | 1480 ms | 8 ms |
 | the menu faded out | 1774 ms | 301 ms |
@@ -556,7 +556,7 @@ screen.
 | `row0PosX` | `(W + 8 - (TileSizes[0]+8)*2) / 2` | 1299 |
 | `row1PosY` | `row0PosY + TileSizes[0] + 16` | 1405 |
 | `textPosY` | `row1PosY + TileSizes[1] + 16` | 1485 |
-| Tile centres | — | 1607, 2232 |
+| Tile centres | n/a | 1607, 2232 |
 
 `big_icon_size = 549` is forced by the layout. The OS row is always centred
 vertically and the tool row hangs off it, so inflating the OS tile is the only

@@ -5,7 +5,7 @@
 # A translucent panel drawn into an icon cannot blur what is behind it: the icon
 # is generated long before anyone knows where rEFInd will place it. But rEFInd
 # already crops the background to the exact tile before painting an entry, so
-# the blur can be done there, at draw time — correct for any number of entries,
+# the blur can be done there, at draw time, correct for any number of entries
 # at any position. patches/frosted-glass.patch adds it, along with a
 # `frost_radius` configuration token.
 #
