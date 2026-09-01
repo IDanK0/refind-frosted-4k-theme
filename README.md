@@ -581,6 +581,30 @@ right icon, name and ring for anything it can boot, including a system installed
 next year. What the installer buys is the seconds *after* the handover, which
 belong to the system being booted and can only be arranged from inside it.
 
+### And Windows
+
+Every other system can be given a splash by installing something inside it.
+Windows cannot: there is no initramfs to put a theme in. But Windows does not
+choose the picture it shows while it starts either — it reads one out of an ACPI
+table called BGRT, the Boot Graphics Resource Table, which the firmware fills in
+with the manufacturer's logo. That is why a laptop shows its own badge during a
+Windows boot and not a Windows one.
+
+A bootloader is the last thing to run before the operating system, so it is the
+last thing that can write to that table. `bgrt.c` finds it through the root
+pointer in the EFI configuration table, writes the screen there as a full-screen
+24-bit bitmap in memory nothing reclaims, and reseals the table's checksum.
+Nothing is installed inside Windows, nothing has to survive Windows being
+reinstalled, and there is nothing there to break.
+
+The picture is taken with the tile in place and *before* the ring starts,
+because Windows draws its own ring of dots underneath and cannot be asked not
+to. One ring is better than two, even when the one you keep is Windows'.
+
+It is testable without booting Windows at all, which is the useful part: Linux
+reads the same table, so `/sys/firmware/acpi/bgrt/image` after a Linux boot is
+exactly the bitmap that was handed over.
+
 ---
 
 ## Design notes

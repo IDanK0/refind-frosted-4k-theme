@@ -199,6 +199,24 @@ eight of them, pushed through the framebuffer before anything is on it: on a rea
 machine that is the slow wipe from top to bottom. The menu's own entrance, which
 is the part you actually watch, is unaffected either way.
 
+`bgrt_logo` (true) hands the screen to the system that boots next.
+
+Windows does not choose the picture it shows while it starts: it reads one out
+of an ACPI table called BGRT, which the firmware fills in with the maker's logo
+— that is why a laptop shows its own badge during a Windows boot rather than a
+Windows one. A bootloader is the last thing to run before the operating system,
+so it is the last thing that can write to that table, and writing the screen
+there means Windows shows the screen. Nothing is installed inside Windows,
+nothing has to survive Windows being reinstalled, and the same picture reaches
+anything else that reads the table.
+
+Windows keeps turning its own ring of dots underneath and cannot be asked not
+to, so what is handed over is the picture *without* ours: the photograph and the
+tile, with Windows' dots below them. It costs about 25 MB of memory the system
+will not reclaim, being a full-screen 24-bit bitmap. `false` leaves the
+firmware's own logo alone, and a machine whose firmware publishes no BGRT keeps
+the boot screen it always had.
+
 `entrance_delay` (0) is how many milliseconds to wait, after the photograph is
 up, before the menu arrives. A monitor takes a second or two to lock onto a
 signal and shows nothing at all until it has, while the firmware has been
