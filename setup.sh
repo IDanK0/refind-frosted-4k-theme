@@ -27,7 +27,7 @@
 #     the menu is still installed and working, and the initramfs is put back.
 set -uo pipefail
 
-VERSION=1.0
+VERSION=$(cat "$(dirname "${BASH_SOURCE[0]}")/VERSION" 2>/dev/null || echo 0.0.0)
 NAME=refind-frosted-4k-theme
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE=/var/lib/$NAME
@@ -37,6 +37,7 @@ ARCH_EFI=x64
 # ------------------------------------------------------------------ options
 DO=install; ASSUME_YES=0; DRY=0; WANT_SPLASH=1; WANT_MENU=1
 ESP=""; ESP_DIR=""; PERMANENT=0; BACKGROUND=""; INSTALL_DEPS=0; ENTRY_MADE=0
+AUTO_UPDATE=0
 
 usage() {
     # Everything from the third line to the first line that is not a comment,
@@ -57,6 +58,7 @@ while [ $# -gt 0 ]; do
         --no-menu)    WANT_MENU=0 ;;
         --permanent)  PERMANENT=1 ;;
         --install-deps) INSTALL_DEPS=1 ;;
+        --auto-update)  AUTO_UPDATE=1 ;;
         --esp)        ESP="${2:?--esp needs a path}"; shift ;;
         --dir)        ESP_DIR="${2:?--dir needs a name}"; shift ;;
         --background) BACKGROUND="${2:?--background needs a filename}"; shift ;;
@@ -450,7 +452,7 @@ plan() {
             say "    ${YEL}skipped${Z}    no plymouth or no initramfs tool on this machine"
         else
             say "    write      /usr/share/plymouth/themes/$NAME/"
-            say "    write      /usr/local/bin/refind-frosted-4k-theme-splash-sync, and a service that runs it"
+            say "    write      /usr/local/bin/refind-frosted-4k-theme-maintain, and a service that runs it"
             say "    set        DeviceScale=1 in /etc/plymouth/plymouthd.conf"
             say "               ${DIM}plymouth halves any screen wider than 2880 for a theme that${Z}"
             say "               ${DIM}cannot ask about it, which is what makes a 4K splash blurry.${Z}"
@@ -782,17 +784,33 @@ install_splash() {
     install -d -m 0755 "/usr/local/share/$NAME" "/usr/local/share/$NAME/stock-icons" \
                        "/usr/local/share/$NAME/library"
     install -m 0644 "$HERE/build.py" "$HERE/plymouth.py" "/usr/local/share/$NAME/"
+    # A copy of the binary that is on the EFI partition, so that if a
+    # distribution's own refind package writes over it later there is something
+    # to put back. Taken from the ESP rather than from the build directory, so
+    # it is also kept when only the splash half is being installed. 340 KB, and
+    # the difference between noticing the loss and being able to undo it.
+    # What was installed, and from where. The updater has no download server to
+    # ask; it asks the git checkout this came from, and nothing else.
+    record "remove $STATE/installed.json"
+    printf '{\n "version": "%s",\n "checkout": "%s",\n "installed": "%s"\n}\n' \
+        "$VERSION" "$HERE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STATE/installed.json"
+
+    local live="$ESP/EFI/$ESP_DIR/refind_${ARCH_EFI}.efi"
+    if [ -f "$live" ] && grep -qa "f.r.o.s.t._.r.a.d.i.u.s" "$live" 2>/dev/null; then
+        install -m 0644 "$live" "/usr/local/share/$NAME/refind_${ARCH_EFI}.efi"
+        good "kept           a copy of the boot menu binary, to put back if it is replaced"
+    fi
     install -m 0644 "$HERE"/stock-icons/*.png "/usr/local/share/$NAME/stock-icons/"
     install -m 0644 "$HERE/library/library.json" "/usr/local/share/$NAME/library/"
-    put "$HERE/splash-sync.py" /usr/local/bin/refind-frosted-4k-theme-splash-sync 0755
-    good "generator      /usr/local/share/$NAME, /usr/local/bin/refind-frosted-4k-theme-splash-sync"
+    put "$HERE/maintain.py" /usr/local/bin/refind-frosted-4k-theme-maintain 0755
+    good "generator      /usr/local/share/$NAME, /usr/local/bin/refind-frosted-4k-theme-maintain"
 
     keep_a_copy /etc/plymouth/plymouthd.conf
 
     # Build and install the theme, at this screen's size, from the menu's own
     # photograph. This also sets DeviceScale and rebuilds the initramfs.
     record "remove /usr/share/plymouth/themes/$NAME"
-    if ! /usr/local/bin/refind-frosted-4k-theme-splash-sync --force; then
+    if ! /usr/local/bin/refind-frosted-4k-theme-maintain --force; then
         bad "the splash could not be built"
         restore_initramfs
         return 1
@@ -828,12 +846,51 @@ install_splash() {
 
     if command -v systemctl >/dev/null && [ -d /etc/systemd/system ]; then
         put "$HERE/$NAME-sync.service" "/etc/systemd/system/$NAME-sync.service"
+        # The update check is a user timer, installed for whoever ran sudo.
+        # See the header of the unit: as root it cannot authenticate to a
+        # private repository, because the credentials are in a login keyring
+        # root has no access to.
+        local who="${SUDO_USER:-}"
+        if [ -n "$who" ] && [ "$who" != root ]; then
+            local home; home=$(getent passwd "$who" | cut -d: -f6)
+            if [ -n "$home" ] && [ -d "$home" ]; then
+                install -d -o "$who" -g "$who" -m 0755 "$home/.config/systemd/user"
+                install -o "$who" -g "$who" -m 0644 "$HERE/$NAME-update.service" \
+                        "$home/.config/systemd/user/$NAME-update.service"
+                install -o "$who" -g "$who" -m 0644 "$HERE/$NAME-update.timer" \
+                        "$home/.config/systemd/user/$NAME-update.timer"
+                record "remove $home/.config/systemd/user/$NAME-update.service"
+                record "remove $home/.config/systemd/user/$NAME-update.timer"
+                if [ "$AUTO_UPDATE" = 1 ]; then
+                    sed -i "s|--update$|--update --apply-update|" \
+                        "$home/.config/systemd/user/$NAME-update.service"
+                fi
+                # runuser alone is not enough: systemctl --user talks to that
+                # user's own systemd over a socket in their runtime directory,
+                # and without XDG_RUNTIME_DIR pointing at it there is nothing
+                # listening. It fails with "Failed to connect to bus".
+                local uid; uid=$(id -u "$who")
+                local asuser=(env "XDG_RUNTIME_DIR=/run/user/$uid" runuser -u "$who" --)
+                "${asuser[@]}" systemctl --user daemon-reload >/dev/null 2>&1
+                if "${asuser[@]}" systemctl --user enable --now "$NAME-update.timer" >/dev/null 2>&1; then
+                    record "user-timer-disable $who $NAME-update.timer"
+                    good "update check   daily, as $who, reporting to the desktop"
+                    [ "$AUTO_UPDATE" = 1 ] && note "               and applying what it finds"
+                else
+                    warn "the update timer could not be enabled for $who; enable it with:"
+                    note "    systemctl --user enable --now $NAME-update.timer"
+                fi
+            fi
+        else
+            note "no non-root user to install the update check for; skipped"
+        fi
         systemctl daemon-reload
         record "service-disable $NAME-sync.service"
+        record "service-disable $NAME-update.timer"
         systemctl enable "$NAME-sync.service" >/dev/null 2>&1
-        good "service        $NAME-sync.service -- follows the menu's photograph from now on"
+        good "service        $NAME-sync.service -- checks and repairs, once per boot"
     else
-        warn "no systemd here; run refind-frosted-4k-theme-splash-sync yourself after changing the photograph"
+        warn "no systemd here; run refind-frosted-4k-theme-maintain yourself after changing the photograph"
     fi
     return 0
 }
@@ -933,6 +990,11 @@ do_uninstall() {
             theme-restore)
                 [ -n "$arg" ] && plymouth-set-default-theme "$arg" >/dev/null 2>&1
                 note "restored       plymouth theme $arg" ;;
+            user-timer-disable)
+                set -- $arg
+                env "XDG_RUNTIME_DIR=/run/user/$(id -u "$1" 2>/dev/null)" \
+                    runuser -u "$1" -- systemctl --user disable --now "$2" >/dev/null 2>&1
+                note "disabled       $2 for $1" ;;
             service-disable)
                 systemctl disable "$arg" >/dev/null 2>&1
                 rm -f "/etc/systemd/system/$arg"

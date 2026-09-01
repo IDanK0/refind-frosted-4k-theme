@@ -288,6 +288,26 @@ From the command line:
 sudo ./setup.sh                     # copy it all to the EFI partition
 ```
 
+## It keeps itself right
+
+A plymouth upgrade takes the default theme back. A `refind` package writes its
+own binary over this one, and the menu keeps booting while quietly losing the
+frost, the settings screen and the boot logo handover. Firmware forgets its boot
+entries. None of it is an error and none of it is loud.
+
+So it is checked once per boot, and repaired: the theme re-selected and the
+initramfs rebuilt around it, the boot menu put back from the copy kept at
+install time. A boot where nothing has drifted prints nothing.
+
+```bash
+sudo refind-frosted-4k-theme-maintain --check    # what has drifted
+```
+
+A newer version is looked for once a day and mentioned on the desktop, never
+applied behind your back. `sudo ./setup.sh --auto-update` changes that if you
+want it. A new operating system needs nothing done for the menu, which finds it
+by itself; only its own splash has to be installed from inside it.
+
 [USAGE.md](USAGE.md) covers the settings screen, the configuration tokens and
 the test harnesses. [INTERNALS.md](INTERNALS.md) is how it works and why:
 the colour arithmetic, the frosted glass, what it costs to draw a 4K menu on a
