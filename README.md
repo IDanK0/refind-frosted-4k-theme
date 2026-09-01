@@ -603,7 +603,21 @@ to. One ring is better than two, even when the one you keep is Windows'.
 
 It is testable without booting Windows at all, which is the useful part: Linux
 reads the same table, so `/sys/firmware/acpi/bgrt/image` after a Linux boot is
-exactly the bitmap that was handed over.
+exactly the bitmap that was handed over. This is that file, read back off a
+running system:
+
+![What the next system is handed](screenshots/windows-logo.png)
+
+Two attempts were needed and the machine explained both. The first put the
+bitmap in memory that is never reclaimed, reasoning that it had to survive into
+a running kernel; Linux answered `Ignoring BGRT: invalid image address`, because
+it accepts the image only from `EFI_BOOT_SERVICES_DATA` — where firmware puts
+its own — and reserves those pages itself once it has. The second was accepted
+but would not open: the header was right in every field this code wrote and
+garbage in every field it did not, because the zeros had been left to
+`SetMem()`, which gnu-efi declares as `SetMem(Buffer, Size, Value)` and
+implements as `memset(Buffer, Value, Size)`. It had been asked to fill no bytes
+at all, and obliged.
 
 ---
 
