@@ -36,7 +36,7 @@ ARCH_EFI=x64
 
 # ------------------------------------------------------------------ options
 DO=install; ASSUME_YES=0; DRY=0; WANT_SPLASH=1; WANT_MENU=1
-ESP=""; ESP_DIR=""; PERMANENT=0; BACKGROUND=""; INSTALL_DEPS=0
+ESP=""; ESP_DIR=""; PERMANENT=0; BACKGROUND=""; INSTALL_DEPS=0; ENTRY_MADE=0
 
 usage() { sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -85,6 +85,20 @@ record() {
     [ "$DRY" = 1 ] && return 0
     mkdir -p "$STATE"
     printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$JOURNAL"
+    sync -f "$JOURNAL" 2>/dev/null || sync
+}
+
+# The same, for a batch: one flush at the end rather than one per line. Used for
+# the fifty-odd icons and the photographs, which are written in one go -- a
+# separate fsync each would be fifty flushes to record fifty copies.
+record_batch() {
+    [ "$DRY" = 1 ] && return 0
+    mkdir -p "$STATE"
+    local now; now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local line
+    for line in "$@"; do
+        printf '%s\t%s\n' "$now" "$line" >> "$JOURNAL"
+    done
     sync -f "$JOURNAL" 2>/dev/null || sync
 }
 
@@ -487,7 +501,11 @@ install_menu() {
 
     say "  building rEFInd $REFIND_VER..."
     if [ "$DRY" = 0 ]; then
-        "$HERE/build-refind.sh" >/dev/null || die "the build failed. Run ./build-refind.sh on its own to see why."
+        mkdir -p "$STATE"
+        if ! "$HERE/build-refind.sh" >"$STATE/build.log" 2>&1; then
+            tail -20 "$STATE/build.log" >&2
+            die "the build failed; the whole log is in $STATE/build.log"
+        fi
     fi
     local built="$HERE/build/refind-$REFIND_VER/refind/refind_${ARCH_EFI}.efi"
     [ "$DRY" = 1 ] || [ -f "$built" ] || die "the build produced no $built"
@@ -497,7 +515,10 @@ install_menu() {
     if [ "$DRY" = 0 ]; then
         local args=(--out "$HERE/assets")
         [ -n "$BACKGROUND" ] && args+=(--background "$BACKGROUND")
-        python3 "$HERE/build.py" "${args[@]}" >/dev/null || die "build.py failed. Run it on its own to see why."
+        if ! python3 "$HERE/build.py" "${args[@]}" >"$STATE/render.log" 2>&1; then
+            tail -20 "$STATE/render.log" >&2
+            die "the artwork could not be rendered; the whole log is in $STATE/render.log"
+        fi
     fi
     good "rendered       assets/"
 
@@ -509,32 +530,46 @@ install_menu() {
         [ -f "$HERE/assets/$f" ] && put "$HERE/assets/$f" "$D/$f"
     done
     if [ "$DRY" = 0 ]; then
+        # Record every one of these, so that uninstalling removes exactly what
+        # was installed -- and only that. backgrounds/ is the directory people
+        # are told to drop their own photographs into, so it must never be
+        # deleted wholesale: what goes is what came from here, and if anything
+        # of theirs is left the directory stays with it.
+        local written=()
         for f in "$HERE"/assets/icons/*.png; do
             [ -e "$f" ] || continue
             install -m 0644 "$f" "$D/icons/$(basename "$f")"
+            written+=("remove $D/icons/$(basename "$f")")
         done
-        # The photographs the settings screen offers. Anything can be dropped in
-        # here later, from any operating system.
         for f in "$HERE"/library/*.jpg "$HERE"/library/*.png; do
             [ -e "$f" ] || continue
             case "$(basename "$f")" in preview-sheet.jpg) continue ;; esac
             install -m 0644 "$f" "$D/backgrounds/$(basename "$f")"
+            written+=("remove $D/backgrounds/$(basename "$f")")
         done
+        [ ${#written[@]} -gt 0 ] && record_batch "${written[@]}"
     fi
-    good "artwork        $(ls "$HERE/assets/icons" 2>/dev/null | wc -l) icons, $(ls "$HERE"/library/*.jpg 2>/dev/null | wc -l) photographs"
+    good "artwork        $(find "$D/icons" -name '*.png' 2>/dev/null | wc -l) icons, $(find "$D/backgrounds" -type f 2>/dev/null | wc -l) photographs"
 
     put "$HERE/refind.conf" "$D/refind.conf"
     # Never overwrite choices made from the boot menu's own settings screen.
-    if [ ! -f "$D/theme.conf" ] && [ -f "$HERE/assets/theme.conf" ]; then
-        put "$HERE/assets/theme.conf" "$D/theme.conf"
+    local theme_note="theme.conf kept as you left it"
+    if [ ! -f "$D/theme.conf" ]; then
+        if [ -f "$HERE/assets/theme.conf" ]; then
+            put "$HERE/assets/theme.conf" "$D/theme.conf"
+            theme_note="theme.conf written"
+        else
+            theme_note="no theme.conf"
+        fi
     fi
-    good "configuration  refind.conf$([ -f "$D/theme.conf" ] && echo ', theme.conf kept')"
+    good "configuration  refind.conf, $theme_note"
 
     register_with_firmware "$D"
 }
 
 register_with_firmware() {
     local D="$1"
+    ENTRY_MADE=0
     command -v efibootmgr >/dev/null || { warn "no efibootmgr: no boot entry was created"; return 0; }
     mountpoint -q /sys/firmware/efi/efivars 2>/dev/null || { warn "efivarfs not mounted: no boot entry was created"; return 0; }
 
@@ -549,6 +584,7 @@ register_with_firmware() {
     if [ -n "$existing" ]; then
         good "firmware       entry Boot$existing already exists; left alone"
         num="$existing"
+        ENTRY_MADE=1
     else
         if [ "$DRY" = 1 ]; then
             good "firmware       would add a boot entry on /dev/$disk partition $part"
@@ -560,6 +596,7 @@ register_with_firmware() {
             || { warn "efibootmgr refused to create the entry"; return 0; }
         num=$(efibootmgr -v | grep -i "refind-frosted" | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
         good "firmware       added boot entry Boot$num"
+        ENTRY_MADE=1
     fi
 
     [ "$DRY" = 1 ] && return 0
@@ -735,7 +772,7 @@ do_uninstall() {
         RESCUE.TXT on the EFI partition lists the manual steps."
 
     detect_initramfs
-    local line what arg touched_initramfs=0
+    local line what arg touched_initramfs=0 touched_theme=0
     # In reverse: the last thing done is the first thing undone.
     while IFS= read -r line; do
         what=$(printf '%s' "$line" | cut -f2- | cut -d' ' -f1)
@@ -748,7 +785,10 @@ do_uninstall() {
                     case "$arg" in */initrd.img-*|*/initramfs-*) touched_initramfs=1 ;; esac
                 fi ;;
             remove)
-                if [ -e "$arg" ]; then rm -rf "$arg"; note "removed        $arg"; fi ;;
+                if [ -e "$arg" ]; then
+                    rm -rf "$arg"; note "removed        $arg"
+                    case "$arg" in */plymouth/themes/*) touched_theme=1 ;; esac
+                fi ;;
             rmdir)
                 [ -d "$arg" ] && rmdir "$arg" 2>/dev/null && note "removed        $arg" ;;
             nvram-del)
@@ -774,11 +814,28 @@ do_uninstall() {
         esac
     done < <(tac "$JOURNAL")
 
-    if [ -d /usr/share/plymouth/themes/$NAME ] || [ "$touched_initramfs" = 1 ]; then
-        rm -rf "/usr/share/plymouth/themes/$NAME"
+    # Only what the journal recorded. An earlier version deleted the Plymouth
+    # theme here whether or not this install had ever put one there -- so
+    # undoing a boot-menu-only install would have taken somebody else's splash
+    # with it.
+    if [ "$touched_theme" = 1 ] || [ "$touched_initramfs" = 1 ]; then
         say "  rebuilding the initramfs..."
         rebuild_initramfs && note "rebuilt        the initramfs without the theme"
     fi
+
+    # Anything still standing in a directory this install made is something it
+    # did not put there -- a photograph of your own, most likely. Say so rather
+    # than deleting it, and only look at the directories the journal names.
+    local keep
+    while IFS= read -r keep; do
+        [ -d "$keep" ] || continue
+        if [ -n "$(ls -A "$keep" 2>/dev/null)" ]; then
+            warn "$keep was left in place: it holds files this did not install"
+            ls -A "$keep" | sed 's/^/                 /'
+        else
+            rmdir "$keep" 2>/dev/null && note "removed        $keep"
+        fi
+    done < <(awk -F'\t' '$2 ~ /^rmdir /{ sub(/^rmdir /,"",$2); print $2 }' "$JOURNAL" | sort -ru)
 
     mv "$JOURNAL" "$JOURNAL.done-$(date -u +%Y%m%d-%H%M%S)"
     head2 "Done"
@@ -818,7 +875,12 @@ MENU_OK=1; SPLASH_OK=1
 
 head2 "Done"
 if [ "$WANT_MENU" = 1 ] && [ "$MENU_OK" = 1 ]; then
-    if [ "$PERMANENT" = 1 ]; then
+    if [ "$ENTRY_MADE" = 0 ]; then
+        warn "the files are installed, but the firmware has no entry pointing at them,"
+        warn "so rebooting will not reach the menu. Add one by hand:"
+        note "    sudo efibootmgr -c -d /dev/<disk> -p <partition> \\"
+        note "        -L refind-frosted -l '\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi'"
+    elif [ "$PERMANENT" = 1 ]; then
         good "reboot and the boot menu is there, and stays there."
     else
         good "reboot and the boot menu is there ${B}for that one boot${Z}."

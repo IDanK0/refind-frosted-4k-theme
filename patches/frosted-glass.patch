@@ -974,7 +974,7 @@ diff -urN a/refind/bgrt.h b/refind/bgrt.h
 +#endif
 diff -urN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-09-01 20:24:26.570232833 +0200
++++ b/refind/config.c	2026-09-01 21:08:56.509619384 +0200
 @@ -548,6 +548,26 @@
          MyFreePool(GlobalConfig.DefaultSelection);
          GlobalConfig.DefaultSelection = StrDuplicate(L"+");
@@ -993,7 +993,7 @@ diff -urN a/refind/config.c b/refind/config.c
 +        // ships with it should agree with them rather than be required by them.
 +        GlobalConfig.FrostRadius   = 14;
 +        GlobalConfig.HandoffSplash = 1800;
-+        GlobalConfig.EntranceDelay = 0;
++        GlobalConfig.EntranceDelay = 800;
 +        GlobalConfig.BgrtLogo      = TRUE;
 +        GlobalConfig.Animations    = TRUE;
 +        GlobalConfig.FadeScreen    = FALSE;

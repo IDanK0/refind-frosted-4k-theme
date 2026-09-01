@@ -229,7 +229,7 @@ once it has read it. `false` leaves the
 firmware's own logo alone, and a machine whose firmware publishes no BGRT keeps
 the boot screen it always had.
 
-`entrance_delay` (0) is how many milliseconds to wait, after the photograph is
+`entrance_delay` (800) is how many milliseconds to wait, after the photograph is
 up, before the menu arrives. A monitor takes a second or two to lock onto a
 signal and shows nothing at all until it has, while the firmware has been
 drawing the whole time — so on a slow display the menu's arrival happens
