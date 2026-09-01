@@ -207,13 +207,19 @@ is the part you actually watch, is unaffected either way.
 `bgrt_logo` (true) hands the screen to the system that boots next.
 
 Windows does not choose the picture it shows while it starts: it reads one out
-of an ACPI table called BGRT, which the firmware fills in with the maker's logo
+of an ACPI table called BGRT, which the firmware fills in with the maker's logo,
 which is why a laptop shows its own badge during a Windows boot instead of a
 Windows one. A bootloader is the last thing to run before the operating system,
-so it is the last thing that can write to that table, and writing the screen
-there means Windows shows the screen. Nothing is installed inside Windows,
-nothing has to survive Windows being reinstalled, and the same picture reaches
-anything else that reads the table.
+so it is the last thing that can write to that table. Nothing is installed
+inside Windows, nothing has to survive Windows being reinstalled, and the same
+picture reaches anything else that reads the table.
+
+The handover is verified through Linux, not through Windows: after a Linux boot
+`/sys/firmware/acpi/bgrt/image` holds the bitmap that was written, which shows
+the table is correct and that an operating system accepts it. Nobody has booted
+Windows here to watch it draw. HackBGRT has been replacing the Windows boot logo
+through this table for years and wants the same 24-bit BMP, so there is good
+reason to expect it, but expect is the honest word.
 
 Windows keeps turning its own ring of dots underneath and cannot be asked not
 to, so what is handed over is the picture *without* ours: the photograph and the

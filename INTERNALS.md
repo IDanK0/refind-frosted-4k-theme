@@ -474,9 +474,16 @@ The picture is taken with the tile in place and *before* the ring starts,
 because Windows draws its own ring of dots underneath and cannot be asked not
 to. One ring is better than two, even when the one you keep is Windows'.
 
-It is testable without booting Windows at all: Linux reads the same table, so
-`/sys/firmware/acpi/bgrt/image` after a Linux boot is exactly the bitmap that
-was handed over. This is that file, read back off a running system:
+It is testable without booting Windows at all, which is as far as the testing
+here has gone. Linux reads the same table, so after a Linux boot
+`/sys/firmware/acpi/bgrt/status` is 1, the type is 0, the offsets are 0,0 and
+`/sys/firmware/acpi/bgrt/image` is exactly the bitmap that was handed over. That
+proves the table is well formed and that an operating system accepts it. It does
+not prove Windows draws it; nobody has booted Windows to look. HackBGRT has been
+doing the same thing to the same table for years and asks for the same 24-bit
+BMP with a 54-byte header, which is the reason to expect it works.
+
+This is that file, read back off a running system:
 
 ![What the next system is handed](screenshots/windows-logo.png)
 
@@ -485,11 +492,11 @@ bitmap in memory that is never reclaimed, reasoning that it had to survive into
 a running kernel; Linux answered `Ignoring BGRT: invalid image address`, because
 it accepts the image only from `EFI_BOOT_SERVICES_DATA` (where firmware puts its
 own) and reserves those pages itself once it has. The second was accepted but
-would not open: the header was right in every field this code wrote and garbage
-in every field it did not, because the zeros had been left to `SetMem()`, which
-gnu-efi declares as `SetMem(Buffer, Size, Value)` and implements as
-`memset(Buffer, Value, Size)`. It had been asked to fill no bytes at all, and
-obliged.
+would not open: `Unsupported BMP compression`, because the header was right in
+every field this code wrote and garbage in every field it did not. The zeros had
+been left to `SetMem()` and did not arrive. Why has never been established;
+writing all fifty-four bytes on purpose is cheaper than finding out, and leaves
+nothing to depend on.
 
 ## Design notes
 

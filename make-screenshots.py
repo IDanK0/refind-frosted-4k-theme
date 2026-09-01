@@ -30,20 +30,27 @@ def shot(name, icons, label, scale=(1920, 1080)):
     preview(ASSETS, dst, icons, label, scale=scale)
     print(f"  {name}  {len(icons)} entries")
 
-def handoff(stem, t=0.55):
-    """The screen rEFInd shows on the way to any system, drawn the way it draws it."""
+def handoff(stem, t=0.55, ring=True):
+    """The screen rEFInd shows on the way to any system, drawn the way it draws it.
+
+    ring=False is the frame the boot logo is taken from. menu.c copies the screen
+    with the tile in place and before the ring starts, because the system being
+    handed to draws its own and cannot be asked not to, so a picture of the
+    hand-over with our dots in it would be a picture of something that is never
+    handed over."""
     import math
     from plymouth import still, dot, angle, layout, NDOTS, DOT, RING
     from build import BIG
     path = os.path.join(ASSETS, "icons", f"{stem}.png")
     c = still(ASSETS, path).convert("RGBA")
-    d = dot()
     icon = Image.open(path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS)
     _, _, cx, cy = layout(icon)
-    for i in range(NDOTS):
-        a = angle(t, i)
-        c.alpha_composite(d, (int(cx + RING * math.cos(a) - DOT / 2),
-                              int(cy + RING * math.sin(a) - DOT / 2)))
+    if ring:
+        d = dot()
+        for i in range(NDOTS):
+            a = angle(t, i)
+            c.alpha_composite(d, (int(cx + RING * math.cos(a) - DOT / 2),
+                                  int(cy + RING * math.sin(a) - DOT / 2)))
     return c.convert("RGB")
 
 
@@ -162,9 +169,14 @@ def main():
     for i, stem in enumerate(["os_win8", "os_fedora", "os_unknown"]):
         frame = handoff(stem).resize((1920, 1080), Image.LANCZOS)
         grid.paste(frame, (0, i * 1080))
+        if stem == "os_win8":
+            # What goes into the ACPI table when Windows is chosen: the same
+            # frame without our ring, which is what menu.c copies.
+            handoff(stem, ring=False).resize((1920, 1080), Image.LANCZOS) \
+                .save(os.path.join(SHOTS, "windows-handoff.png"), optimize=True)
     grid.resize((960, 1620), Image.LANCZOS).save(os.path.join(SHOTS, "handoff-any.png"),
                                                  optimize=True)
-    print("  handoff-any.png  the same screen for three systems")
+    print("  handoff-any.png, windows-handoff.png  the same screen for three systems")
 
     # The Plymouth splash: what the initramfs actually draws.
     #
