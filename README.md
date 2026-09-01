@@ -696,6 +696,14 @@ rEFInd's own arithmetic rather than storing it. The one thing it asserts before
 writing anything is that at least two OS tiles still fit across the screen —
 below that rEFInd starts scrolling, and a menu that scrolls is a different menu.
 
+The values in the table are for 3840×2160, which is the size everything is
+stated at. `build.py --size WxH` restates them for another screen, and the
+installer passes it whatever the machine reports: at 1920×1080 the tile is 308
+rather than 617, the frost radius 7 rather than 14, the font cell 14×27 rather
+than 27×52 — and five entries still fit across, because that count is what the
+scaling is arranged to preserve. `TILE_XSPACING` is the exception, being
+`#define`d in rEFInd's own source; 8 px is 8 px on every screen.
+
 | Quantity | Formula (`refind/menu.c`) | Value |
 |---|---|---|
 | `TileSizes[0]` | `big_icon_size * 9 / 8` | 617 |
@@ -802,7 +810,8 @@ Looking at this machine
 
 It stops here, having changed nothing, if any of it is wrong: no UEFI, 32-bit
 firmware, Secure Boot on, no EFI partition, more than one EFI partition (it
-prints them and asks which), or a missing dependency.
+prints them and stops, so you can name the right one with `--esp`), or a
+missing dependency.
 
 **2. It prints the plan, and nothing has happened yet.**
 
@@ -879,7 +888,7 @@ killed halfway through.
 ## Choosing a background: from the boot menu
 
 There is a **Settings** icon in the tool row. It lists every picture sitting in
-`EFI/refind/backgrounds`, dims, glass, colour and animation, and writes what you
+its own `backgrounds/` directory, dims, glass, colour and animation, and writes what you
 choose to `EFI/refind/theme.conf` — which `refind.conf` includes last, so it
 wins, and deleting it brings the machine back to what was installed.
 

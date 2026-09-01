@@ -13,7 +13,16 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VM="$HERE/vm"
-ESP=/boot/efi/EFI/refind
+
+# Where the menu is installed. setup.sh puts it in EFI/refind-frosted unless a
+# build of this was already in EFI/refind; hard-coding the second meant this
+# harness refused to run on any machine installed the ordinary way.
+ESP=""
+for root in /boot/efi /efi /boot; do
+    for name in refind-frosted refind; do
+        [ -f "$root/EFI/$name/refind_x64.efi" ] && { ESP="$root/EFI/$name"; break 2; }
+    done
+done
 CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
 VARS=/usr/share/OVMF/OVMF_VARS_4M.fd
 

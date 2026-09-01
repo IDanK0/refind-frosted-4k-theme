@@ -50,8 +50,10 @@ which photograph you built it from. Build it from *Dune 45 at Sunrise* and it is
 CC BY-SA 4.0; build it from the default, *Mars Over Dunes*, and it is public
 domain.
 
-The screenshots in `screenshots/` are the exception, and they are all built from
-*Mars Over Dunes*.
+The screenshots in `screenshots/` are the exception: they are checked in, and
+built from *Mars Over Dunes*, which is public domain — except
+`screenshots/library.png`, which is the whole library side by side and therefore
+contains all six, share-alike one included.
 
 ## The logos
 

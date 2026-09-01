@@ -170,30 +170,37 @@ pkg_for() {
         apt:pillow)       echo "python3-pil" ;;
         apt:fonts)        echo "fonts-dejavu-core" ;;
         apt:efi)          echo "efibootmgr" ;;
+        apt:plymouth)     echo "plymouth" ;;
         dnf:toolchain)    echo "gcc make binutils gnu-efi gnu-efi-devel" ;;
         dnf:pillow)       echo "python3-pillow" ;;
         dnf:fonts)        echo "dejavu-sans-fonts dejavu-sans-mono-fonts" ;;
         dnf:efi)          echo "efibootmgr" ;;
+        dnf:plymouth)     echo "plymouth plymouth-plugin-script" ;;
         zypper:toolchain) echo "gcc make binutils gnu-efi-devel" ;;
         zypper:pillow)    echo "python3-Pillow" ;;
         zypper:fonts)     echo "dejavu-fonts" ;;
         zypper:efi)       echo "efibootmgr" ;;
+        zypper:plymouth)  echo "plymouth plymouth-plugin-script" ;;
         pacman:toolchain) echo "base-devel gnu-efi" ;;
         pacman:pillow)    echo "python-pillow" ;;
         pacman:fonts)     echo "ttf-dejavu" ;;
         pacman:efi)       echo "efibootmgr" ;;
+        pacman:plymouth)  echo "plymouth" ;;
         apk:toolchain)    echo "build-base gnu-efi-dev" ;;
         apk:pillow)       echo "py3-pillow" ;;
         apk:fonts)        echo "font-dejavu" ;;
         apk:efi)          echo "efibootmgr" ;;
+        apk:plymouth)     echo "plymouth" ;;
         xbps:toolchain)   echo "base-devel gnu-efi-libs" ;;
         xbps:pillow)      echo "python3-Pillow" ;;
         xbps:fonts)       echo "dejavu-fonts-ttf" ;;
         xbps:efi)         echo "efibootmgr" ;;
+        xbps:plymouth)    echo "plymouth" ;;
         emerge:toolchain) echo "sys-boot/gnu-efi" ;;
         emerge:pillow)    echo "dev-python/pillow" ;;
         emerge:fonts)     echo "media-fonts/dejavu" ;;
         emerge:efi)       echo "sys-boot/efibootmgr" ;;
+        emerge:plymouth)  echo "sys-boot/plymouth" ;;
         *) echo "" ;;
     esac
 }
@@ -359,6 +366,9 @@ look() {
     local need="" found=0
     command -v gcc >/dev/null && command -v make >/dev/null && command -v objcopy >/dev/null \
         || need="$need $(pkg_for toolchain)"
+    # build-refind.sh fetches the rEFInd tarball with it, and a toolchain
+    # metapackage does not always bring it
+    command -v curl >/dev/null || need="$need curl"
     # The same places build-refind.sh looks. `ls a b` returns non-zero when any
     # one of its arguments is missing, which made this claim gnu-efi was absent
     # on every machine that has it.
@@ -372,6 +382,9 @@ look() {
     [ -n "$(find /usr/share/fonts /usr/local/share/fonts -name 'DejaVuSans-Bold.ttf' -print -quit 2>/dev/null)" ] \
         || need="$need $(pkg_for fonts)"
     command -v efibootmgr >/dev/null || need="$need $(pkg_for efi)"
+    if [ "$WANT_SPLASH" = 1 ] && ! command -v plymouthd >/dev/null; then
+        need="$need $(pkg_for plymouth)"
+    fi
     MISSING_PKGS=$(printf '%s' "$need" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')
     if [ -n "$MISSING_PKGS" ]; then
         warn "missing        $MISSING_PKGS"
@@ -513,7 +526,7 @@ install_menu() {
 
     say "  rendering the artwork at $SCREEN..."
     if [ "$DRY" = 0 ]; then
-        local args=(--out "$HERE/assets")
+        local args=(--out "$HERE/assets" --size "$SCREEN")
         [ -n "$BACKGROUND" ] && args+=(--background "$BACKGROUND")
         if ! python3 "$HERE/build.py" "${args[@]}" >"$STATE/render.log" 2>&1; then
             tail -20 "$STATE/render.log" >&2
@@ -551,7 +564,25 @@ install_menu() {
     fi
     good "artwork        $(find "$D/icons" -name '*.png' 2>/dev/null | wc -l) icons, $(find "$D/backgrounds" -type f 2>/dev/null | wc -l) photographs"
 
-    put "$HERE/refind.conf" "$D/refind.conf"
+    # refind.conf has to agree with the artwork about three numbers, and the
+    # artwork was just drawn for this screen rather than for a 4K one. build.py
+    # writes what it used; put those into the copy that gets installed, leaving
+    # the one in the repository at its 4K defaults.
+    local conf="$HERE/assets/refind.conf.installed"
+    cp "$HERE/refind.conf" "$conf"
+    if [ -f "$HERE/assets/geometry.json" ]; then
+        local big small frost
+        big=$(  sed -n 's/.*"big_icon_size":[ ]*\([0-9]*\).*/\1/p'   "$HERE/assets/geometry.json")
+        small=$(sed -n 's/.*"small_icon_size":[ ]*\([0-9]*\).*/\1/p' "$HERE/assets/geometry.json")
+        frost=$(sed -n 's/.*"frost_radius":[ ]*\([0-9]*\).*/\1/p'    "$HERE/assets/geometry.json")
+        if [ -n "$big" ] && [ -n "$small" ] && [ -n "$frost" ]; then
+            sed -i "s/^big_icon_size .*/big_icon_size   $big/;
+                    s/^small_icon_size .*/small_icon_size $small/;
+                    s/^frost_radius .*/frost_radius $frost/" "$conf"
+            good "geometry       big_icon_size $big, small_icon_size $small, frost_radius $frost"
+        fi
+    fi
+    put "$conf" "$D/refind.conf"
     # Never overwrite choices made from the boot menu's own settings screen.
     local theme_note="theme.conf kept as you left it"
     if [ ! -f "$D/theme.conf" ]; then
