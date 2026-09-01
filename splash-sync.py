@@ -127,7 +127,7 @@ def force_device_scale(dry):
     """Tell Plymouth not to guess.
 
     Returns "already" if the setting was there, "set" if this call put it there,
-    "overridden" if the administrator has asked for something else, "failed" if
+    "overridden:N" if the administrator has asked for a scale of N, "failed" if
     the file could not be written.
 
     plymouthd.conf is the file the distribution ships for exactly this, it is
@@ -152,7 +152,7 @@ def force_device_scale(dry):
         elif section == "daemon" and "=" in bare and not bare.startswith("#"):
             key, _, value = bare.partition("=")
             if key.strip().lower() == "devicescale":
-                return "already" if value.strip() == "1" else "overridden"
+                return "already" if value.strip() == "1" else ("overridden:" + value.strip())
 
     if dry:
         print(f"  scale      would set DeviceScale=1 in {CONF}")
@@ -337,7 +337,18 @@ def main():
         size = tuple(int(v) for v in a.size.lower().split("x"))
     else:
         panel = screen_size()
-        scale = 1 if scaling in ("already", "set") else plymouth_device_scale(*panel)
+        if scaling in ("already", "set"):
+            scale = 1
+        elif scaling.startswith("overridden:"):
+            # Somebody set DeviceScale themselves. Believe their number rather
+            # than guessing what plymouth would have guessed, which is only
+            # right by accident when their number happens to be 2.
+            try:
+                scale = max(1, int(scaling.split(":", 1)[1]))
+            except ValueError:
+                scale = plymouth_device_scale(*panel)
+        else:
+            scale = plymouth_device_scale(*panel)
         size  = (panel[0] // scale, panel[1] // scale)
         if scale != 1:
             print(f"  scale      plymouth will halve this {panel[0]}x{panel[1]} screen; "

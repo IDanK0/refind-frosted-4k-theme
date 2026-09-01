@@ -615,6 +615,29 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
          refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput,
                               (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
                               EfiBltVideoToBltBuffer, XPos, YPos, 0, 0,
+diff -urN a/libeg/text.c b/libeg/text.c
+--- a/libeg/text.c	2024-01-28 19:51:20.000000000 +0100
++++ b/libeg/text.c	2026-09-01 21:35:37.622511600 +0200
+@@ -112,6 +112,19 @@
+     if (TextLength * FontCellWidth + PosX > CompImage->Width)
+         TextLength = (CompImage->Width - PosX) / FontCellWidth;
+ 
++    // And vertically, which nothing was doing.
++    //
++    // The horizontal clip above has always been here; there was never one for
++    // the other axis, so a caller that asked for a line below the bottom of the
++    // image got its glyphs composed straight past the end of the buffer. In
++    // UEFI there is no guard page to catch that: it quietly writes over whatever
++    // the pool allocator put next. A caller asking for an impossible row is a
++    // bug in the caller, but it should not be able to corrupt the heap.
++    if ((PosX >= CompImage->Width) || (PosY >= CompImage->Height))
++        return;
++    if (PosY + egGetFontHeight() > CompImage->Height)
++        return;
++
+     if (BGBrightness < 128) {
+        if (LightFontImage == NULL) {
+           LightFontImage = egCopyImage(BaseFontImage);
 diff -urN a/refind/Makefile b/refind/Makefile
 --- a/refind/Makefile	2024-04-06 16:20:34.000000000 +0200
 +++ b/refind/Makefile	2026-09-01 16:28:38.221899050 +0200
@@ -629,8 +652,8 @@ diff -urN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -urN a/refind/bgrt.c b/refind/bgrt.c
 --- a/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/bgrt.c	2026-09-01 20:22:59.872397882 +0200
-@@ -0,0 +1,323 @@
++++ b/refind/bgrt.c	2026-09-01 21:38:36.500354345 +0200
+@@ -0,0 +1,328 @@
 +/*
 + * refind/bgrt.c
 + * Hand the picture on the screen to the next operating system.
@@ -800,6 +823,12 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    Length = ReadU32(Table + 4);
 +    if ((Length <= ACPI_HEADER_LENGTH) || (Length > 0x10000))
 +        return NULL;
++    // The signature and the length, but deliberately not the checksum. The RSDP
++    // above is checksummed because a wrong one there means the pointer itself is
++    // not to be trusted; here the pointer has already been vouched for, and
++    // firmware that ships an XSDT whose bytes do not sum to zero is common
++    // enough that refusing on it would take the boot logo away from working
++    // machines to no purpose. The bounds below are what keep the walk safe.
 +    Entries = (Length - ACPI_HEADER_LENGTH) / (UINT32) Width;
 +    List    = Table + ACPI_HEADER_LENGTH;
 +
@@ -855,22 +884,22 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    Bytes  = BMP_HEADER_LENGTH + Stride * Image->Height;
 +    Pages  = (Bytes + 4095) / 4096;
 +
-+    // Give back the previous one first. Nothing can still be reading it: the
-+    // only consumer is the system this is about to hand the machine to, and if
-+    // that had happened this code would not be running.
-+    if ((LastBmp != 0) && (LastPages > 0)) {
-+        refit_call2_wrapper(BS->FreePages, LastBmp, LastPages);
-+        LastBmp = 0;
-+        LastPages = 0;
-+    }
-+
 +    Status = refit_call4_wrapper(BS->AllocatePages, AllocateAnyPages,
 +                                 EfiBootServicesData, Pages, &Where);
 +    if (EFI_ERROR(Status) || (Where == 0)) {
 +        LOG(1, LOG_LINE_NORMAL, L"No memory for the boot logo (%d pages): %r", (INTN) Pages, Status);
 +        return NULL;
 +    }
-+    Bmp       = (UINT8 *) (UINTN) Where;
++    Bmp = (UINT8 *) (UINTN) Where;
++
++    // Only now give back the previous one. Freeing it first and then failing to
++    // allocate would have thrown away a working boot logo to make room for one
++    // that was never made -- and the table would still be pointing at the memory
++    // that had just been released. Nothing can still be reading the old one: its
++    // only consumer is the system this is about to hand the machine to, and if
++    // that had happened this code would not be running.
++    if ((LastBmp != 0) && (LastPages > 0))
++        refit_call2_wrapper(BS->FreePages, LastBmp, LastPages);
 +    LastBmp   = Where;
 +    LastPages = Pages;
 +
@@ -879,11 +908,10 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    //
 +    // They were left to SetMem() first, and came out full of whatever the pages
 +    // had held before -- a header correct in the fields this code wrote and
-+    // wrong in the fields it did not, which is a memorable shape for a bug.
-+    // gnu-efi declares SetMem(Buffer, Size, Value) and behaves like
-+    // memset(Buffer, Value, Size); rEFInd's own MyMemSet() passes the arguments
-+    // in the second order, which is the tell. So SetMem(Bmp, Bytes, 0) asked for
-+    // zero bytes to be filled, and zero bytes were.
++    // wrong in the fields it did not, which is a memorable shape for a bug, and
++    // which Linux reported as "Unsupported BMP compression". Why the fill did
++    // not happen was never established; writing every byte on purpose is
++    // cheaper than finding out, and leaves nothing to depend on.
 +    for (x = 0; x < BMP_HEADER_LENGTH; x++)
 +        Bmp[x] = 0;
 +    Bmp[0] = 'B'; Bmp[1] = 'M';
@@ -1191,7 +1219,7 @@ diff -urN a/refind/main.c b/refind/main.c
                     MainLoopRunning = FALSE;   // just in case we get this far
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-09-01 20:52:40.520235512 +0200
++++ b/refind/menu.c	2026-09-01 21:34:27.383026066 +0200
 @@ -59,7 +59,9 @@
  #include "screen.h"
  #include "lib.h"
@@ -1348,7 +1376,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1128,482 @@
+@@ -1074,31 +1128,492 @@
  // graphical main menu style
  //
  
@@ -1442,13 +1470,16 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    __asm__ __volatile__ ("mrs %0, cntvct_el0" : "=r" (Count));
 +    return Count;
 +#else
-+    // No counter to read. StartClock() will find TicksPerUs is 0, set it to 1,
-+    // and every frame will look like it took no time -- so the animations run
-+    // as fast as the machine draws them, which is what they did before any of
-+    // this was written.
++    // No counter to read on this architecture.
 +    return 0;
 +#endif
 +}
++
++// Does the clock move? If it does not, every animation loop below asks how long
++// it has been running, is told nothing at all, and never reaches its end: a
++// menu that hangs before it is drawn. So it is checked once, and if there is no
++// clock the animations are simply not run.
++static BOOLEAN ClockRuns = TRUE;
 +
 +static VOID StartClock(VOID) {
 +    UINT64 Before, After;
@@ -1458,9 +1489,16 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    Before = ReadTicks();
 +    refit_call1_wrapper(BS->Stall, 20000);          // 20 ms is enough to divide by
 +    After  = ReadTicks();
++    if (After <= Before) {
++        ClockRuns  = FALSE;
++        TicksPerUs = 1;
++        GlobalConfig.Animations = FALSE;
++        LOG(1, LOG_LINE_NORMAL, L"No usable clock: animations off");
++        return;
++    }
 +    TicksPerUs = (After - Before) / 20000;
 +    if (TicksPerUs == 0)
-+        TicksPerUs = 1;                             // no clock: every frame is "now"
++        TicksPerUs = 1;                             // a very slow counter, but a counter
 +}
 +
 +UINT64 NowUs(VOID) {
@@ -1845,7 +1883,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1655,8 @@
+@@ -1150,10 +1665,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -1858,7 +1896,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1677,416 @@
+@@ -1174,6 +1687,416 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -2275,7 +2313,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +2100,7 @@
+@@ -1187,7 +2110,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -2284,7 +2322,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2373,7 @@
+@@ -1460,7 +2383,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -2293,7 +2331,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2451,7 @@
+@@ -1538,7 +2461,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -2302,7 +2340,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2553,7 @@
+@@ -1640,7 +2563,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -2311,7 +2349,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2591,7 @@
+@@ -1678,7 +2601,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2320,7 +2358,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2613,7 @@
+@@ -1700,7 +2623,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2329,7 +2367,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2702,7 @@
+@@ -1789,7 +2712,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -2338,7 +2376,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2727,7 @@
+@@ -1814,7 +2737,7 @@
      }
  
      if (AllowGraphicsMode) {
@@ -2676,8 +2714,8 @@ diff -urN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -urN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-09-01 20:53:05.983797744 +0200
-@@ -0,0 +1,1077 @@
++++ b/refind/theme.c	2026-09-01 21:31:07.609557715 +0200
+@@ -0,0 +1,1091 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -3631,8 +3669,15 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    State.CurrentSelection = (Selected > State.MaxIndex) ? State.MaxIndex : Selected;
 +    if (State.CurrentSelection < 0)
 +        State.CurrentSelection = 0;
-+    if (State.CurrentSelection > State.LastVisible)
-+        State.LastVisible = State.CurrentSelection;
++    // If the row wanted is below the window, scroll the window down to it --
++    // do not stretch it. PanelH was worked out from how many rows fit, so a
++    // window made one row taller draws that row below the bottom of the glass.
++    if (State.CurrentSelection > State.LastVisible) {
++        State.FirstVisible = State.CurrentSelection - State.MaxVisible + 1;
++        if (State.FirstVisible < 0)
++            State.FirstVisible = 0;
++        State.LastVisible = State.FirstVisible + State.MaxVisible - 1;
++    }
 +    ThemeMenuStyle(Screen, &State, MENU_FUNCTION_PAINT_ALL, NULL);
 +} // VOID ShowPanelNow()
 +
@@ -3673,8 +3718,15 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +        Menu.InfoLines = NULL;
 +        Menu.InfoLineCount = 0;
 +
-+        AddMenuInfoLine(&Menu, PoolPrint(L"%d photographs in EFI\\refind\\%s",
-+                                         Count, BACKGROUND_DIR));
++        // Where they actually are, not where they used to be. This said
++        // EFI\refind outright, which stopped being true the moment the
++        // installer started putting the menu in a directory of its own --
++        // and a settings screen that names the wrong directory sends people
++        // to copy photographs into a place nothing reads.
++        AddMenuInfoLine(&Menu, PoolPrint(L"%d photographs in %s\\%s",
++                                         Count,
++                                         (SelfDirPath != NULL) ? SelfDirPath : L"EFI\\refind",
++                                         BACKGROUND_DIR));
 +        AddMenuInfoLine(&Menu, StrDuplicate(L"Drop your own in there from any system"));
 +
 +        Rows[0] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));

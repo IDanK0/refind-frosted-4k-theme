@@ -388,6 +388,7 @@ look() {
     # build-refind.sh fetches the rEFInd tarball with it, and a toolchain
     # metapackage does not always bring it
     command -v curl >/dev/null || need="$need curl"
+    command -v patch >/dev/null || need="$need patch"
     # The same places build-refind.sh looks. `ls a b` returns non-zero when any
     # one of its arguments is missing, which made this claim gnu-efi was absent
     # on every machine that has it.

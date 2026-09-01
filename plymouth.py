@@ -75,7 +75,15 @@ def layout(icon):
     tile_x = (W + XSP - (TILE + XSP)) // 2       # rEFInd's own centring, n = 1
     tile_y = R0Y
     cy     = tile_y + TILE + YSP + TILE1 + YSP + 75
-    top    = tile_y + ICON_OFF + icon.split()[3].getbbox()[1]
+    # The same threshold rEFInd uses. ImageInkTop() in menu.c takes the first
+    # row whose alpha exceeds 8; Pillow's getbbox() takes the first row whose
+    # alpha exceeds 0, and the icons fade in from alpha 1 over their top
+    # thirty-odd rows. Two different answers, 37 rows apart, put the splash 18
+    # pixels below the frame the boot menu had just handed over -- at the one
+    # moment the whole design is about the two being the same picture.
+    alpha  = icon.split()[3].point(lambda v: 255 if v > 8 else 0)
+    box    = alpha.getbbox()
+    top    = tile_y + ICON_OFF + (box[1] if box else 0)
     bottom = cy + RING + DOT // 2
     shift  = H // 2 - (top + bottom) // 2
     return tile_x, tile_y + shift, W // 2, cy + shift
@@ -245,6 +253,11 @@ fun refresh_callback() {{
 # Root is not encrypted here, but a splash that cannot ask for a passphrase
 # leaves a machine that needs one waiting at a screen which says nothing.
 # Sprites have to be globals.
+#
+# The three fractions below sit between the ring and 0.75. Plymouth centres
+# every display on the largest one and shows each the middle of the canvas, so
+# on a 1080-line screen beside a 2160-line one only 0.25 to 0.75 is visible --
+# and a passphrase prompt nobody can see is a machine that looks hung.
 
 message_sprite  = Sprite();
 prompt_sprite   = Sprite();
@@ -261,18 +274,23 @@ fun centre(sprite, image, fraction) {{
 }}
 
 fun message_callback(text) {{
-    centre(message_sprite, Image.Text(text, 0.85, 0.85, 0.85, 1.0, FONT, "center"), 0.86);
+    centre(message_sprite, Image.Text(text, 0.85, 0.85, 0.85, 1.0, FONT, "center"), 0.735);
 }}
 Plymouth.SetMessageFunction(message_callback);
 
 fun display_password_callback(prompt, bullets) {{
-    centre(prompt_sprite, Image.Text(prompt, 1.0, 1.0, 1.0, 1.0, FONT, "center"), 0.76);
-    dots = "";
+    centre(prompt_sprite, Image.Text(prompt, 1.0, 1.0, 1.0, 1.0, FONT, "center"), 0.71);
+    # NOT "dots". Plymouth's script has no local scope: every assignment is a
+    # global, and `dots` is the array of spinner sprites. Building the row of
+    # asterisks in a variable of that name replaced the spinner with a string
+    # the first time somebody typed a character of their passphrase, and the
+    # next refresh had nothing left to turn.
+    bullet_text = "";
     for (i = 0; i < bullets; i++) {{
-        dots = dots + "*";
+        bullet_text = bullet_text + "*";
     }}
     if (bullets > 0) {{
-        centre(bullets_sprite, Image.Text(dots, 1.0, 1.0, 1.0, 1.0, FONT, "center"), 0.81);
+        centre(bullets_sprite, Image.Text(bullet_text, 1.0, 1.0, 1.0, 1.0, FONT, "center"), 0.735);
     }} else {{
         bullets_sprite.SetOpacity(0);
     }}
