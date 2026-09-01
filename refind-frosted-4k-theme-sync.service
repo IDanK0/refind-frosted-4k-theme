@@ -21,7 +21,7 @@ IOSchedulingClass=idle
 # to whatever is running. That is not a signal to send to a program that is
 # writing the file the machine boots from.
 TimeoutStartSec=900
-ExecStart=/usr/local/bin/refind-frosted-4k-theme-splash-sync
+ExecStart=/usr/local/bin/refind-frosted-4k-theme-maintain
 # A machine with no rEFInd, no photograph chosen yet, or no way to rebuild an
 # initramfs is not a broken machine; it just has nothing to do here.
 SuccessExitStatus=0 1

@@ -426,7 +426,7 @@ the boot menu: the tile lands on exactly the pixel it would have occupied there.
 
 The menu changes its photograph from its own settings screen, with no operating
 system running. The splash is an initramfs built weeks earlier. There is no way
-for the first to tell the second, so the second asks: `refind-frosted-4k-theme-splash-sync` reads
+for the first to tell the second, so the second asks: `refind-frosted-4k-theme-maintain` reads
 `theme.conf` off the EFI partition once per boot, compares it with what the
 installed theme was built from, and rebuilds only when they differ. Nearly every
 boot it finds nothing to do and stops in a few milliseconds; when the photograph

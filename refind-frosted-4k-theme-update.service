@@ -1,0 +1,23 @@
+[Unit]
+Description=Look for a newer refind-frosted-4k-theme
+Documentation=https://github.com/IDanK0/refind-frosted-4k-theme
+# A user unit, not a system one, and that is not a detail.
+#
+# The check is a git fetch against the repository this was installed from. Run
+# as root from a system timer it cannot authenticate: the credentials for a
+# private repository live in the login keyring of the person who cloned it, and
+# root has no session and no keyring. It fails every day, for ever, and the
+# machine quietly concludes it is up to date.
+#
+# Run as that person, it simply works, for a private repository as well as a
+# public one. So this runs as them, reports what it finds, and leaves applying
+# it to a command they type -- which needs root anyway.
+ConditionPathExists=/var/lib/refind-frosted-4k-theme/installed.json
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=300
+ExecStart=/usr/local/bin/refind-frosted-4k-theme-maintain --update
+SuccessExitStatus=0 1

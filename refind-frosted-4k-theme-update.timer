@@ -1,0 +1,11 @@
+[Unit]
+Description=Look for a newer refind-frosted-4k-theme, daily
+
+[Timer]
+OnCalendar=daily
+# Not on the hour, and not the moment you log in: there is no hurry.
+RandomizedDelaySec=4h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -110,6 +110,64 @@ is the demonstration that none of those are needed.
 
 Needs `qemu-system-x86` and `ovmf`.
 
+## Keeping itself right
+
+Three things drift on a machine that is otherwise working perfectly, and all
+three are somebody else doing their job:
+
+* A plymouth upgrade re-runs `update-alternatives` and takes the default theme
+  back, so the splash quietly reverts to the distribution's.
+* A `refind` package writes its own `refind_x64.efi` over the EFI partition. The
+  menu still boots, so nothing complains; it has simply lost the frost, the
+  settings screen and the boot logo handover.
+* Firmware forgets its boot entries, after a CMOS reset or a firmware update.
+
+`refind-frosted-4k-theme-sync.service` checks all of it once per boot, along
+with the photograph, and repairs what it can. On a boot where nothing has
+drifted it prints nothing at all.
+
+```bash
+sudo refind-frosted-4k-theme-maintain --check    # report, change nothing
+sudo refind-frosted-4k-theme-maintain            # report and repair
+```
+
+It puts the theme back and rebuilds the initramfs around it; it puts the boot
+menu back from the copy kept in `/usr/local/share`, keeping whatever replaced it
+as `*.replaced-*`. It does not touch NVRAM: a machine that has lost its boot
+entries has usually lost all of them and may be mid-recovery, so that one is
+reported and left to you.
+
+### A newer version
+
+A user timer looks once a day and tells the desktop when there is one. It is a
+user timer and not a system one for a reason: the check is a `git fetch` against
+the repository this was installed from, and run as root it cannot authenticate,
+because the credentials for a private repository live in the login keyring of
+whoever cloned it. Run as that person it simply works.
+
+```bash
+refind-frosted-4k-theme-maintain --update        # ask now
+```
+
+By default it looks and reports. `sudo ./setup.sh --auto-update` makes it pull
+and re-run the installer instead. That is off by default deliberately: applying
+an update to the program that starts the machine, unattended, is a decision for
+whoever owns the machine. Even switched on it refuses a checkout with local
+changes and only fast-forwards.
+
+There is no download server and no update endpoint. It asks the git checkout it
+came from, recorded at install time in
+`/var/lib/refind-frosted-4k-theme/installed.json`.
+
+### A new operating system
+
+Nothing to do for the boot menu: rEFInd finds it, and it gets its own tile, its
+own logo, its own name and the handover picture, with no configuration. The
+Plymouth splash is the exception, because it lives inside an initramfs and can
+only be installed from inside the system it belongs to. Run `sudo ./setup.sh`
+there and it gets the same splash over the same photograph, carrying its own
+logo and name.
+
 ## The splash
 
 ### The splash follows the menu
@@ -120,13 +178,13 @@ actually boots at, and a service that keeps it that way.
 
 The menu can change its photograph at any time, from its own settings screen,
 with no operating system running, and the splash lives in an initramfs built
-weeks earlier, so it cannot be told. Instead it asks: `refind-frosted-4k-theme-splash-sync` reads
+weeks earlier, so it cannot be told. Instead it asks: `refind-frosted-4k-theme-maintain` reads
 `theme.conf` off the EFI partition once per boot, compares it with what the
 installed theme was built from, and rebuilds only when they differ. Almost every
 boot it finds nothing to do and stops. When you do change the photograph, the
 splash matches it from the boot after.
 
-Run `sudo refind-frosted-4k-theme-splash-sync` yourself to have it now instead of next time, and
+Run `sudo refind-frosted-4k-theme-maintain` yourself to have it now instead of next time, and
 `--force` to rebuild regardless.
 
 **On another system.** Nothing here assumes Debian. The initramfs is rebuilt

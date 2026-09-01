@@ -1,34 +1,35 @@
 #!/usr/bin/env python3
-"""Keep the splash the system boots into the same as the one the boot menu left.
+"""Keep the machine the way it was installed, once per boot.
 
-The boot menu writes its choices to theme.conf on the EFI partition -- which
-photograph, how far it is dimmed, how much colour is taken from it -- and it can
-change them at any time, from its own settings screen, with no operating system
-running. The splash cannot be told about that, because it lives in an initramfs
-built weeks earlier: it keeps whichever photograph was current the day it was
-installed, and diverges from the menu the first time anybody changes anything.
+Four things drift, and all four are somebody else doing their job properly:
 
-So it is asked, once, per boot. Read the EFI partition, compare it with what the
-installed theme was built from, and if they differ, build the theme again and
-rebuild the initramfs. It costs nothing when nothing has changed, which is
-almost always, and when something has changed the new splash is there from the
-next boot.
+  * The photograph changes. The boot menu can be re-themed from its own settings
+    screen with no operating system running, and the splash lives in an
+    initramfs built weeks earlier, so it cannot be told. It is asked instead.
+  * A plymouth package upgrade resets the default theme through
+    update-alternatives, and the splash silently goes back to the distribution's.
+  * A refind package upgrade writes its own refind_x64.efi over the EFI
+    partition, and the menu loses the frost, the settings screen and the boot
+    logo handover while still booting perfectly well, so nothing complains.
+  * Firmware clears its boot entries -- a CMOS reset, a firmware update, some
+    laptops after a battery change -- and the entry pointing at the menu is
+    gone.
 
-The size matters as much as the picture. Plymouth scales its background to the
-screen with a two-tap filter at draw time; giving it an image that is already
-the size of the screen means it scales nothing at all. That is the difference
-between a splash that looks like the menu and one that looks like a photograph
-of the menu.
+None of them is an error. All of them are quiet. So this checks, repairs what it
+can repair, and says plainly what it cannot.
 
-    ./splash-sync.py            do it if anything has changed
-    ./splash-sync.py --force    do it regardless
-    ./splash-sync.py --dry-run  say what would happen
+    maintain                    check, and put right what has drifted
+    maintain --check            check and report, change nothing
+    maintain --force            rebuild the splash regardless
+    maintain --dry-run          say what would happen
 """
 import argparse, glob, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE  = os.path.dirname(os.path.abspath(__file__))
 NAME  = "refind-frosted-4k-theme"
 THEME = f"/usr/share/plymouth/themes/{NAME}"
+LIB   = f"/usr/local/share/{NAME}"      # the generator, and a copy of the binary
+STATE = f"/var/lib/{NAME}"              # the installer's journal
 STAMP = os.path.join(THEME, "built-from.json")
 CONF  = "/etc/plymouth/plymouthd.conf"
 MARK  = f"# {NAME}: draw the splash at the screen's real resolution."
@@ -312,13 +313,387 @@ def rebuild_initramfs(dry):
     return True
 
 
+
+# --------------------------------------------------------------- self-repair
+#
+# Each check answers one question and, where it can, puts the answer right. They
+# report through this, so a boot where nothing has drifted prints nothing at all
+# and a boot where something has says exactly what and what was done about it.
+
+class Report:
+    def __init__(self, dry):
+        self.dry = dry
+        self.fixed = []
+        self.broken = []
+
+    def ok(self, what):
+        pass                                   # silence is the normal case
+
+    def repaired(self, what, how):
+        # In --check nothing has been done, so nothing may be reported as done.
+        self.fixed.append(what)
+        if self.dry:
+            print(f"  would fix  {what}: {how}")
+        else:
+            print(f"  repaired   {what}: {how}")
+
+    def cannot(self, what, why):
+        self.broken.append(what)
+        print(f"  drifted    {what}: {why}")
+
+
+def theme_is_selected():
+    """Which theme plymouth will actually draw."""
+    link = "/usr/share/plymouth/themes/default.plymouth"
+    try:
+        return os.path.basename(os.path.dirname(os.path.realpath(link)))
+    except OSError:
+        return None
+
+
+def select_theme(dry):
+    """Make ours the default again, whichever mechanism this distribution uses."""
+    plymouth = f"{THEME}/{NAME}.plymouth"
+    if not os.path.isfile(plymouth):
+        return False
+    if dry:
+        return True
+    if shutil.which("update-alternatives"):
+        subprocess.run(["update-alternatives", "--install",
+                        "/usr/share/plymouth/themes/default.plymouth",
+                        "default.plymouth", plymouth, "200"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return subprocess.run(["update-alternatives", "--set", "default.plymouth", plymouth],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    if shutil.which("plymouth-set-default-theme"):
+        return subprocess.run(["plymouth-set-default-theme", NAME],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    return False
+
+
+def check_theme_selected(rep):
+    """A plymouth upgrade re-runs update-alternatives and can take the default
+    back. The theme is still installed; it is simply no longer the one drawn."""
+    if not os.path.isdir(THEME):
+        return False                            # the splash half is not installed
+    now = theme_is_selected()
+    if now == NAME:
+        rep.ok("theme selected")
+        return False
+    if select_theme(rep.dry):
+        rep.repaired("plymouth theme", f"was '{now or 'none'}', selected again")
+        return True                             # the initramfs now needs rebuilding
+    rep.cannot("plymouth theme", f"'{now or 'none'}' is selected and it could not be changed")
+    return False
+
+
+def theme_in_initramfs():
+    """Is the theme actually inside the image the machine will boot?
+
+    Rebuilding the initramfs is the expensive repair here, so it is worth being
+    sure before doing it. lsinitramfs lists without extracting.
+    """
+    try:
+        rel = os.uname().release
+    except OSError:
+        return None
+    for img in (f"/boot/initrd.img-{rel}", f"/boot/initramfs-{rel}.img"):
+        if not os.path.isfile(img):
+            continue
+        for lister in (["lsinitramfs", img], ["lsinitrd", img]):
+            if not shutil.which(lister[0]):
+                continue
+            try:
+                out = subprocess.run(lister, capture_output=True, text=True, timeout=120)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if out.returncode == 0:
+                return f"themes/{NAME}/" in out.stdout or f"themes/{NAME}\n" in out.stdout
+        return None                             # no lister: cannot tell, do not guess
+    return None
+
+
+def check_theme_in_initramfs(rep):
+    if not os.path.isdir(THEME):
+        return
+    present = theme_in_initramfs()
+    if present is None:
+        return                                  # nothing to say if we cannot look
+    if present:
+        rep.ok("theme in the initramfs")
+        return
+    if rep.dry:
+        rep.cannot("initramfs", "the theme is missing from it")
+        return
+    try:
+        rebuild_initramfs(False)
+        rep.repaired("initramfs", "the theme was missing from it; rebuilt")
+    except Exception as e:                       # noqa: BLE001
+        rep.cannot("initramfs", f"the theme is missing and the rebuild failed: {e}")
+
+
+PATCHED_MARK = b"f\x00r\x00o\x00s\x00t\x00_\x00r\x00a\x00d\x00i\x00u\x00s\x00"
+
+
+def is_ours(binary):
+    """rEFInd keeps its configuration tokens in the binary as UTF-16 strings, so
+    a build carrying frost_radius is one of ours and a stock one is not."""
+    try:
+        with open(binary, "rb") as fh:
+            return PATCHED_MARK in fh.read()
+    except OSError:
+        return False
+
+
+def check_boot_menu(rep, esp):
+    """A distribution's refind package writes its own binary over this one on
+    upgrade. The machine still boots, and the menu still works, so nothing
+    complains -- it has simply lost the frost, the settings screen and the boot
+    logo handover."""
+    binary = os.path.join(esp, "refind_x64.efi")
+    if not os.path.isfile(binary):
+        rep.cannot("boot menu", f"{binary} is gone")
+        return
+    if is_ours(binary):
+        rep.ok("boot menu")
+        return
+    kept = os.path.join(LIB, "refind_x64.efi")
+    if not os.path.isfile(kept):
+        rep.cannot("boot menu", "it has been replaced by another build and no copy was kept")
+        return
+    if rep.dry:
+        rep.cannot("boot menu", "it has been replaced by another build")
+        return
+    try:
+        shutil.copy2(binary, binary + ".replaced-" + NAME)
+        shutil.copy2(kept, binary)
+        rep.repaired("boot menu", "another build had replaced it; put back")
+    except OSError as e:
+        rep.cannot("boot menu", f"another build replaced it and it could not be put back: {e}")
+
+
+def firmware_entry(esp_dir_name):
+    """A Boot#### entry that actually points at this menu, if there is one.
+
+    Not one whose label mentions the project: the entry on a machine where
+    rEFInd was installed before this was may be called anything, and a label is
+    the one part of a boot entry nobody has to keep accurate. What decides is
+    the path in the device path -- \\EFI\\<dir>\\refind_x64.efi -- which is
+    where the firmware will actually go looking.
+
+    Returns the entry number, "" if the firmware has none, or None if the
+    question could not be asked at all.
+    """
+    if not shutil.which("efibootmgr") or not os.path.isdir("/sys/firmware/efi/efivars"):
+        return None
+    try:
+        out = subprocess.run(["efibootmgr", "-v"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    want = ("\\EFI\\" + esp_dir_name + "\\").lower()
+    for line in out.stdout.splitlines():
+        if not line.startswith("Boot") or "*" not in line.split("\t")[0]:
+            continue
+        low = line.lower()
+        if want in low and "refind_x64.efi" in low:
+            return line.split()[0].rstrip("*")[4:]
+    return ""
+
+
+def check_firmware_entry(rep, esp_dir_name):
+    """Firmware forgets. A CMOS reset, a firmware update, a flat coin cell, and
+    the entry is gone -- usually along with every other entry, which is why this
+    reports rather than quietly writing to NVRAM on a machine that has just lost
+    its boot configuration and may be mid-recovery."""
+    if not os.path.isfile(os.path.join(STATE, "journal")):
+        return                                  # the menu half was never installed
+    num = firmware_entry(esp_dir_name)
+    if num is None:
+        return                                  # no efibootmgr, or no efivarfs
+    if num:
+        rep.ok("firmware entry")
+        return
+    rep.cannot("firmware entry",
+               "no boot entry points at the menu any more. Other entries have "
+               "probably gone too, so check them before adding one back; "
+               f"re-running  sudo {os.path.join(HERE, 'setup.sh')}  creates it")
+
+
+
+
+# ------------------------------------------------------------------- updates
+#
+# Deliberately not part of the per-boot check. That runs before the network is
+# up, from a oneshot unit that the boot waits on, and a git fetch there is a
+# thing that can hang a machine at "Starting ..." for ninety seconds. The check
+# lives on a daily timer of its own instead, ordered after the network.
+
+def installed_state():
+    try:
+        return json.load(open(os.path.join(STATE, "installed.json")))
+    except (OSError, ValueError):
+        return {}
+
+
+def version_of(checkout):
+    try:
+        return open(os.path.join(checkout, "VERSION")).read().strip()
+    except OSError:
+        return None
+
+
+def newer(a, b):
+    """Is a newer than b? Both are dotted numbers; anything unparseable loses."""
+    def parts(v):
+        try:
+            return [int(x) for x in str(v).split(".")]
+        except ValueError:
+            return None
+    pa, pb = parts(a), parts(b)
+    if pa is None or pb is None:
+        return False
+    return pa > pb
+
+
+def check_for_update(apply_it, dry):
+    """Ask the checkout's remote whether there is a newer version.
+
+    It only looks at the git checkout this was installed from. There is no
+    download server, no update endpoint and no code fetched from anywhere this
+    machine was not already pointed at -- an updater for a bootloader should be
+    the least imaginative program in the project.
+    """
+    state = installed_state()
+    checkout = state.get("checkout")
+    if not checkout or not os.path.isdir(os.path.join(checkout, ".git")):
+        print("  update     installed from somewhere that is no longer a git checkout; "
+              "nothing to check")
+        return
+    here = version_of(checkout)
+
+    # This is meant to run as the person who owns the checkout, from their own
+    # user timer, because that is where the credentials for a private repository
+    # are. Run as anyone else it will simply fail to authenticate, and say so.
+    def git(*args, timeout=120):
+        env = dict(os.environ)
+        env["GIT_TERMINAL_PROMPT"] = "0"          # never sit waiting for a password
+        return subprocess.run(["git", "-C", checkout, *args],
+                              capture_output=True, text=True, timeout=timeout, env=env)
+
+    try:
+        fetched = git("fetch", "--quiet", "origin")
+        if fetched.returncode != 0:
+            why = fetched.stderr.strip().splitlines()[-1] if fetched.stderr.strip() else "no reason given"
+            print(f"  update     could not reach the remote: {why}")
+            if "could not read Username" in why or "Authentication failed" in why:
+                print(f"  update     that is a credentials problem, not a network one. This has to "
+                      f"run as whoever cloned {checkout}; as root it has no keyring to ask.")
+            return
+        branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main"
+        behind = git("rev-list", "--count", f"HEAD..origin/{branch}").stdout.strip()
+        remote_version = git("show", f"origin/{branch}:VERSION").stdout.strip()
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"  update     could not ask the remote: {e}")
+        return
+
+    if behind in ("", "0"):
+        return                                   # up to date; say nothing
+    print(f"  update     {behind} commit(s) behind origin/{branch}"
+          + (f", version {here} -> {remote_version}" if newer(remote_version, here) else ""))
+
+    if not apply_it:
+        print(f"  update     not applying automatically. To take it:")
+        print(f"                 cd {checkout} && git pull && sudo ./setup.sh")
+        # A line in the journal is a line nobody reads. Say it where it will be
+        # seen, if there is a desktop to say it to.
+        if shutil.which("notify-send"):
+            subprocess.run(["notify-send", "-a", NAME, "-u", "low",
+                            "A newer boot theme is available",
+                            f"version {here} -> {remote_version}\n"
+                            f"cd {checkout} && git pull && sudo ./setup.sh"],
+                           check=False)
+        return
+    if dry:
+        print("  update     would pull and re-run the installer")
+        return
+
+    # Refuse on a dirty tree. Pulling over somebody's edits to the thing that
+    # boots the machine is not an update, it is a surprise.
+    if git("status", "--porcelain").stdout.strip():
+        print("  update     the checkout has local changes; not touching it")
+        return
+    if git("pull", "--ff-only", "--quiet").returncode != 0:
+        print("  update     the pull did not fast-forward; leaving it alone")
+        return
+    print(f"  update     pulled. Running the installer.")
+    subprocess.run(["sudo", "-n", os.path.join(checkout, "setup.sh"), "--yes"],
+                   check=False)
+
+
+def other_systems(esp):
+    """Linux installs on this machine that do not have the splash.
+
+    The boot menu needs nothing done for them: rEFInd finds them, and each gets
+    its own tile, its own logo and the handover picture. The Plymouth splash is
+    different -- it lives inside an initramfs, so it can only be installed from
+    inside the system it belongs to. This says which those are rather than
+    pretending it can reach them.
+    """
+    root = os.path.dirname(os.path.dirname(esp))          # .../EFI/<us> -> ...
+    efi = os.path.join(root, "EFI")
+    ours = os.path.basename(esp).lower()
+    skip = {ours, "boot", "microsoft", "tools", "refind-frosted-4k-theme"}
+    found = []
+    try:
+        for d in sorted(os.listdir(efi)):
+            if d.lower() in skip or not os.path.isdir(os.path.join(efi, d)):
+                continue
+            found.append(d)
+    except OSError:
+        return []
+    return found
+
+
+def finish(rep, reselected, rebuilt):
+    """The initramfs check goes last, because the work above may already have
+    rebuilt it and there is no sense reading a 40 MB index twice."""
+    if reselected and not rebuilt and not rep.dry:
+        try:
+            rebuild_initramfs(False)
+            rep.repaired("initramfs", "rebuilt around the theme that was put back")
+            rebuilt = True
+        except Exception as e:                    # noqa: BLE001
+            rep.cannot("initramfs", f"could not rebuild: {e}")
+    if not rebuilt:
+        check_theme_in_initramfs(rep)
+    if rep.broken:
+        print(f"  {len(rep.broken)} thing(s) drifted that could not be put right")
+
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--force", action="store_true", help="rebuild even if nothing changed")
     ap.add_argument("--dry-run", action="store_true", help="say what would happen")
     ap.add_argument("--size", default=None, metavar="WxH",
                     help="compose at this size instead of the screen's own")
+    ap.add_argument("--check", action="store_true",
+                    help="report what has drifted, repair nothing")
+    ap.add_argument("--update", action="store_true",
+                    help="ask the remote whether there is a newer version")
+    ap.add_argument("--apply-update", action="store_true",
+                    help="with --update, pull it and re-run the installer")
     a = ap.parse_args()
+    if a.check:
+        a.dry_run = True
+
+    if a.update:
+        check_for_update(a.apply_update, a.dry_run)
+        return
 
     esp = esp_dir()
     if esp is None:
@@ -327,6 +702,15 @@ def main():
         # `set -e`, halfway through.
         print("  splash     no rEFInd on the EFI partition: nothing to follow")
         return
+
+    # Everything that is not the photograph. These are cheap -- a few stats and
+    # one read of the initramfs index -- and on a boot where nothing has drifted
+    # they print nothing, which is the point: a maintenance program that talks
+    # every morning is one nobody reads.
+    rep = Report(a.dry_run)
+    reselected = check_theme_selected(rep)
+    check_boot_menu(rep, esp)
+    check_firmware_entry(rep, os.path.basename(esp))
 
     # Before anything else, because the answer decides what size to build at,
     # and because the file has to be right before the initramfs is rebuilt with
@@ -359,9 +743,12 @@ def main():
         print("  splash     the boot menu names no photograph yet: nothing to do")
         return
 
+    rebuilt = False
     if (not a.force) and (scaling != "set") and (have() == wanted):
-        print(f"  splash     already the photograph the menu is using "
-              f"({wanted['photo']}, {size[0]}x{size[1]})")
+        if not (rep.fixed or rep.broken):
+            print(f"  splash     already the photograph the menu is using "
+                  f"({wanted['photo']}, {size[0]}x{size[1]})")
+        finish(rep, reselected, rebuilt)
         return
 
     gen = generator()
@@ -415,6 +802,7 @@ def main():
     if not a.dry_run:
         json.dump(wanted, open(STAMP, "w"), indent=1)
     print("  splash     now the same photograph the menu is showing")
+    finish(rep, reselected, True)
 
 
 def only_one():
@@ -428,8 +816,8 @@ def only_one():
     reason to refuse to run, only a reason not to promise anything.
     """
     import errno, fcntl, tempfile
-    for path in ("/run/refind-frosted-4k-theme-splash-sync.lock",
-                 os.path.join(tempfile.gettempdir(), "refind-frosted-4k-theme-splash-sync.lock")):
+    for path in ("/run/refind-frosted-4k-theme-maintain.lock",
+                 os.path.join(tempfile.gettempdir(), "refind-frosted-4k-theme-maintain.lock")):
         try:
             fh = open(path, "w")
         except OSError:
