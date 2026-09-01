@@ -577,8 +577,8 @@ diff -urN a/Make.common b/Make.common
 I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -urN a/refind/bgrt.c b/refind/bgrt.c
 --- a/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/bgrt.c	2026-09-01 16:39:47.503175631 +0200
-@@ -0,0 +1,240 @@
++++ b/refind/bgrt.c	2026-09-01 16:48:25.335648916 +0200
+@@ -0,0 +1,258 @@
 +/*
 + * refind/bgrt.c
 + * Hand the picture on the screen to the next operating system.
@@ -756,17 +756,33 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +        return NULL;
 +    }
 +    Bmp = (UINT8 *) (UINTN) Where;
-+    SetMem(Bmp, Bytes, 0);
 +
++    // Every one of the fifty-four bytes, written on purpose, including the ones
++    // that are zero.
++    //
++    // They were left to SetMem() first, and came out full of whatever the pages
++    // had held before -- a header correct in the fields this code wrote and
++    // wrong in the fields it did not, which is a memorable shape for a bug.
++    // gnu-efi declares SetMem(Buffer, Size, Value) and behaves like
++    // memset(Buffer, Value, Size); rEFInd's own MyMemSet() passes the arguments
++    // in the second order, which is the tell. So SetMem(Bmp, Bytes, 0) asked for
++    // zero bytes to be filled, and zero bytes were.
++    for (x = 0; x < BMP_HEADER_LENGTH; x++)
++        Bmp[x] = 0;
 +    Bmp[0] = 'B'; Bmp[1] = 'M';
-+    WriteU32(Bmp + 2, (UINT32) Bytes);
++    WriteU32(Bmp + 2, (UINT32) Bytes);            // 6: two reserved words, zero
 +    WriteU32(Bmp + 10, BMP_HEADER_LENGTH);
 +    WriteU32(Bmp + 14, 40);                       // BITMAPINFOHEADER
 +    WriteU32(Bmp + 18, (UINT32) Image->Width);
 +    WriteU32(Bmp + 22, (UINT32) Image->Height);   // positive: rows run bottom to top
 +    Bmp[26] = 1; Bmp[27] = 0;                     // one plane
 +    Bmp[28] = 24; Bmp[29] = 0;                    // 24 bits a pixel
++    WriteU32(Bmp + 30, 0);                        // no compression
 +    WriteU32(Bmp + 34, (UINT32) (Stride * Image->Height));
++    WriteU32(Bmp + 38, 0);                        // pixels per metre, across
++    WriteU32(Bmp + 42, 0);                        // ...and down
++    WriteU32(Bmp + 46, 0);                        // no palette
++    WriteU32(Bmp + 50, 0);                        // ...and none of it important
 +
 +    for (y = 0; y < Image->Height; y++) {
 +        EG_PIXEL *In = Image->PixelData + (Image->Height - 1 - y) * Image->Width;
@@ -776,6 +792,8 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +            *Out++ = In[x].g;
 +            *Out++ = In[x].r;
 +        }
++        for (x = Row; x < Stride; x++)      // the row's padding, if it has any
++            *Out++ = 0;
 +    }
 +    *Size = Bytes;
 +    return Bmp;
