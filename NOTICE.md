@@ -12,7 +12,7 @@ licence that asks for credit is a licence that has to be honoured, not a badge.
 
 ## The boot menu
 
-* **rEFInd 0.14.2** — Roderick W. Smith, GPLv3, with the files inherited from
+* **rEFInd 0.14.2**, by Roderick W. Smith. GPLv3, with the files inherited from
   rEFIt under Christoph Pfisterer's three-clause BSD licence (both texts are in
   the rEFInd source tarball, which `setup.sh` downloads). This project ships a
   patch, `patches/frosted-glass.patch`, not a copy of rEFInd; `setup.sh`
@@ -25,7 +25,7 @@ licence that asks for credit is a licence that has to be honoured, not a badge.
 
 Six, all from Wikimedia Commons, all free to redistribute. `library/library.json`
 records the licence, the author and the source URL of each one, and that file is
-the authority — this table is a copy of it.
+the authority; this table is a copy of it.
 
 | Photograph | Author | Licence |
 |---|---|---|
@@ -38,12 +38,12 @@ the authority — this table is a copy of it.
 
 One of them is **share-alike**: *Dune 45 at Sunrise*, CC BY-SA 4.0. A modified
 copy of it carries that licence with it, and the boot menu's `background.png` is
-exactly such a copy — darkened, blurred and composited. The other five ask only
+exactly such a copy, darkened, blurred and composited. The other five ask only
 for credit, or nothing at all.
 
 No generated artwork is kept in this repository. `background.png`, the icons,
 the frosted panel and the Plymouth theme are all built on the machine they are
-installed on, from `library/` and `build.py` — which is what lets the theme fit
+installed on, from `library/` and `build.py`. That is what lets the theme fit
 the screen it finds and the photograph you pick, and which means the question of
 what licence a particular generated `background.png` carries is answered by
 which photograph you built it from. Build it from *Dune 45 at Sunrise* and it is
@@ -52,18 +52,18 @@ domain.
 
 Two things are the exception, and both are checked in:
 
-* `screenshots/` — built from *Mars Over Dunes*, which is public domain, except
+* `screenshots/`, built from *Mars Over Dunes*, which is public domain, except
   `library.png`, which is the whole library side by side and therefore contains
   all six, the share-alike one included, and `windows-logo.png`, which was read
   back off a running machine and is *Desert Skies* (CC0).
-* `library/preview-sheet.jpg` — a contact sheet of the library, so it too
+* `library/preview-sheet.jpg`, a contact sheet of the library, so it too
   contains all six. It is not installed on any machine; it is there so the
   README can show what the library looks like.
 
 ## The logos
 
 `stock-icons/SOURCES.md` records, for every icon, whether it came from rEFInd's
-own SVG set or from Wikimedia Commons, and — for the ones from Commons — under
+own SVG set or from Wikimedia Commons, and for the ones from Commons, under
 which licence. The ones from rEFInd's own set are covered by rEFInd's licence.
 Seventeen are still rEFInd's 128-pixel bitmaps because no vector of them exists
 anywhere.
@@ -74,7 +74,7 @@ boot menu does.
 
 ## The type
 
-The labels, and every glyph in `font.png`, are rendered from **DejaVu Sans** —
+The labels, and every glyph in `font.png`, are rendered from DejaVu Sans:
 public domain and Bitstream Vera Fonts Copyright, which permits exactly this.
 The Plymouth splash asks for the *Ubuntu* font by name at run time and falls back
 to whatever the system has; it bundles no font.

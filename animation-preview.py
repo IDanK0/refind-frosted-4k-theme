@@ -50,7 +50,7 @@ def menu_frame(icons, chosen=0):
     return im
 
 
-def save_gif(name, frames, ms, scale=None):
+def save_gif(name, frames, ms, scale=None, hold=0, slow=1):
     """Write the animation as a GIF, without turning the photograph into a poster.
 
     A GIF carries at most 256 colours. Asking for 64 of them, and choosing them
@@ -74,10 +74,25 @@ def save_gif(name, frames, ms, scale=None):
     shared = tall.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
 
     frames = [f.quantize(palette=shared, dither=Image.FLOYDSTEINBERG) for f in frames]
+
+    # How long each frame is held, and how long the last one is held for.
+    #
+    # These animations last between half a second and one; played at their true
+    # speed in a loop that restarts the instant it ends, they read as a flicker
+    # rather than as a movement, and you cannot see what happened. So the ones
+    # that are watched rather than measured are slowed, and the finished picture
+    # is held before it starts again. The caption says which are slowed and by
+    # how much, because a picture of an animation that runs at a speed the
+    # machine does not is worth nothing if it does not say so.
+    each = [ms * slow] * len(frames)
+    if hold:
+        each[-1] = hold
     path = os.path.join(SHOTS, name)
     frames[0].save(path, save_all=True, append_images=frames[1:],
-                   duration=ms, loop=0, optimize=True)
-    print(f"  {name}  {len(frames)} frames  {os.path.getsize(path)/1024:.0f} KB")
+                   duration=each, loop=0, optimize=True)
+    secs = sum(each) / 1000.0
+    print(f"  {name}  {len(frames)} frames  {secs:.1f}s a loop  "
+          f"{os.path.getsize(path)/1024:.0f} KB")
 
 
 def main():
@@ -110,7 +125,7 @@ def main():
             over.paste(tile, (0, down))
             c.paste(blend(band, over, a), box)
         frames.append(c)
-    save_gif("anim-in.gif", frames, IN_STEP_MS)
+    save_gif("anim-in.gif", frames, IN_STEP_MS, slow=2, hold=1800)
 
     # --- the menu leaving, and the chosen tile travelling to the middle
     # Colour it the way rEFInd will. The icons on disk are neutral -- the whole
@@ -174,7 +189,8 @@ def main():
             c.alpha_composite(d, (int(cx + RING * math.cos(ang) - DOT / 2),
                                   int(cy + RING * math.sin(ang) - DOT / 2)))
         frames.append(c.convert("RGB"))
-    save_gif("anim-handoff.gif", frames, (OUT_MS + MOVE_MS) // (OUT_FRAMES + MOVE_FRAMES))
+    save_gif("anim-handoff.gif", frames,
+             (OUT_MS + MOVE_MS) // (OUT_FRAMES + MOVE_FRAMES), slow=2, hold=1200)
 
     # --- the ring on its own, close up
     #
@@ -186,14 +202,16 @@ def main():
     box = (int(cx - span / 2), int(cy - span / 2),
            int(cx - span / 2) + span, int(cy - span / 2) + span)
     plate = landed
-    for k in range(30):
+    for k in range(45):
         c = plate.copy()
         for i in range(NDOTS):
-            ang = angle(k * PERIOD / 30, i)
+            ang = angle(k * PERIOD / 45, i)
             c.alpha_composite(d, (int(cx + RING * math.cos(ang) - DOT / 2),
                                   int(cy + RING * math.sin(ang) - DOT / 2)))
         spin.append(c.convert("RGB").crop(box))
-    save_gif("spinner.gif", spin, int(PERIOD * 1000 / 30), scale=(200, 200))
+    # True speed: one turn is 1.8 seconds on the machine and 1.8 seconds here.
+    # It loops without a seam, so there is nothing to hold at the end.
+    save_gif("spinner.gif", spin, int(PERIOD * 1000 / 45), scale=(200, 200))
 
 
 if __name__ == "__main__":
