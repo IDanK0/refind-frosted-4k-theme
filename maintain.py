@@ -11,8 +11,8 @@ Four things drift, and all four are somebody else doing their job properly:
   * A refind package upgrade writes its own refind_x64.efi over the EFI
     partition, and the menu loses the frost, the settings screen and the boot
     logo handover while still booting perfectly well, so nothing complains.
-  * Firmware clears its boot entries -- a CMOS reset, a firmware update, some
-    laptops after a battery change -- and the entry pointing at the menu is
+  * Firmware clears its boot entries. A CMOS reset, a firmware update, some
+    laptops after a battery change, and the entry pointing at the menu is
     gone.
 
 None of them is an error. All of them are quiet. So this checks, repairs what it
@@ -38,7 +38,7 @@ MARK  = f"# {NAME}: draw the splash at the screen's real resolution."
 def esp_dir():
     """Where the boot menu lives, if it lives anywhere.
 
-    setup.sh installs into a directory of its own -- EFI/refind-frosted-4k-theme -- and
+    setup.sh installs into a directory of its own, EFI/refind-frosted-4k-theme, and
     only uses EFI/refind when a build of this was already there. Looking only in
     EFI/refind meant that on a machine installed the ordinary way this found
     nothing, said there was nothing to follow, and the splash never followed the
@@ -106,13 +106,13 @@ def plymouth_device_scale(width, height):
     Verbatim from plymouth's get_device_scale_guess(). It matters because the
     guess is what gets used: the splash is drawn while simpledrm owns the
     display, simpledrm reports no physical size, and plymouth therefore never
-    reaches the DPI calculation -- it goes on pixel count alone, and calls
+    reaches the DPI calculation; it goes on pixel count alone, and calls
     anything from 2880x1620 up a HiDPI screen. Worse, having guessed once it
     keeps guessing, so the real monitor's real dimensions never get a say.
 
     A scale of 2 halves the screen as the theme sees it. Plymouth's script
-    plugin has no notion of device scale at all -- there is not one mention of
-    it in the whole plugin -- so a theme cannot compensate: it asks how wide the
+    plugin has no notion of device scale at all: there is not one mention of
+    it in the whole plugin, so a theme cannot compensate: it asks how wide the
     screen is, is told 1920, and hands over a 1920-wide picture, which plymouth
     then blows back up to 3840. On a 4K screen that is the difference between
     the splash and a photograph of the splash.
@@ -133,7 +133,7 @@ def force_device_scale(dry):
 
     plymouthd.conf is the file the distribution ships for exactly this, it is
     copied into the initramfs by both initramfs-tools and dracut, and it is read
-    before any theme loads -- which is the only place this can be fixed, because
+    before any theme loads, which is the only place this can be fixed, because
     by the time the theme runs the screen has already been halved.
     """
     try:
@@ -190,7 +190,7 @@ def screen_size():
 
     The preferred mode of the largest connected output, which is what the kernel
     sets before Plymouth draws anything. A machine with no connectors to ask --
-    a virtual one, or one whose driver arrives later -- gets the master size,
+    a virtual one, or one whose driver arrives later: gets the master size,
     which is the size everything in this project is drawn at anyway.
     """
     best = None
@@ -220,7 +220,7 @@ def want(esp, size):
     photo = conf.get("background")
     # theme.conf is on a FAT partition that anything can write to, including a
     # Windows install and anyone with a live USB, and this runs as root. A
-    # background of "../../../../etc/shadow" should name no file at all -- so
+    # background of "../../../../etc/shadow" should name no file at all, so
     # take the last component and nothing else, and require it to still be
     # inside the backgrounds directory when the path is put back together.
     if photo:
@@ -276,7 +276,7 @@ def rebuild_initramfs(dry):
 
     Debian and Ubuntu build an initramfs with initramfs-tools; Fedora, RHEL and
     openSUSE use dracut; Arch and its derivatives use mkinitcpio, which this did
-    not know about at all -- it found neither of the other two, printed a line
+    not know about at all; it found neither of the other two, printed a line
     about it, and then went on to write the stamp saying the work was done, so
     every subsequent boot agreed there was nothing to do and the splash never
     appeared. All three are asked to rebuild every kernel they know about,
@@ -450,7 +450,7 @@ def is_ours(binary):
 def check_boot_menu(rep, esp):
     """A distribution's refind package writes its own binary over this one on
     upgrade. The machine still boots, and the menu still works, so nothing
-    complains -- it has simply lost the frost, the settings screen and the boot
+    complains: it has simply lost the frost, the settings screen and the boot
     logo handover."""
     binary = os.path.join(esp, "refind_x64.efi")
     if not os.path.isfile(binary):
@@ -480,7 +480,7 @@ def firmware_entry(esp_dir_name):
     Not one whose label mentions the project: the entry on a machine where
     rEFInd was installed before this was may be called anything, and a label is
     the one part of a boot entry nobody has to keep accurate. What decides is
-    the path in the device path -- \\EFI\\<dir>\\refind_x64.efi -- which is
+    the path in the device path, \\EFI\\<dir>\\refind_x64.efi, which is
     where the firmware will actually go looking.
 
     Returns the entry number, "" if the firmware has none, or None if the
@@ -506,7 +506,7 @@ def firmware_entry(esp_dir_name):
 
 def check_firmware_entry(rep, esp_dir_name):
     """Firmware forgets. A CMOS reset, a firmware update, a flat coin cell, and
-    the entry is gone -- usually along with every other entry, which is why this
+    the entry is gone: usually along with every other entry, which is why this
     reports rather than quietly writing to NVRAM on a machine that has just lost
     its boot configuration and may be mid-recovery."""
     if not os.path.isfile(os.path.join(STATE, "journal")):
@@ -564,7 +564,7 @@ def check_for_update(apply_it, dry):
 
     It only looks at the git checkout this was installed from. There is no
     download server, no update endpoint and no code fetched from anywhere this
-    machine was not already pointed at -- an updater for a bootloader should be
+    machine was not already pointed at. An updater for a bootloader should be
     the least imaginative program in the project.
     """
     state = installed_state()
@@ -639,7 +639,7 @@ def other_systems(esp):
 
     The boot menu needs nothing done for them: rEFInd finds them, and each gets
     its own tile, its own logo and the handover picture. The Plymouth splash is
-    different -- it lives inside an initramfs, so it can only be installed from
+    different; it lives inside an initramfs, so it can only be installed from
     inside the system it belongs to. This says which those are rather than
     pretending it can reach them.
     """
@@ -703,8 +703,8 @@ def main():
         print("  splash     no rEFInd on the EFI partition: nothing to follow")
         return
 
-    # Everything that is not the photograph. These are cheap -- a few stats and
-    # one read of the initramfs index -- and on a boot where nothing has drifted
+    # Everything that is not the photograph. These are cheap: a few stats and
+    # one read of the initramfs index, and on a boot where nothing has drifted
     # they print nothing, which is the point: a maintenance program that talks
     # every morning is one nobody reads.
     rep = Report(a.dry_run)
@@ -796,7 +796,7 @@ def main():
     # The stamp says "the installed theme was built from this". It has to be
     # written after the initramfs contains that theme, not before: written first,
     # a failed rebuild left a stamp claiming the work was done, and every boot
-    # after it agreed there was nothing to do -- so the splash silently stayed
+    # after it agreed there was nothing to do, so the splash silently stayed
     # whatever it had been, for ever.
     rebuild_initramfs(a.dry_run)
     if not a.dry_run:
@@ -812,7 +812,7 @@ def only_one():
     from two different sets of contents. That can happen: the boot service runs
     it and somebody runs it by hand at the same moment. Returns the open file
     while the lock is held, the string "busy" if another copy has it, or
-    "unlocked" if there is nowhere writable to put a lock -- which is not a
+    "unlocked" if there is nowhere writable to put a lock, which is not a
     reason to refuse to run, only a reason not to promise anything.
     """
     import errno, fcntl, tempfile
@@ -836,7 +836,7 @@ def only_one():
 if __name__ == "__main__":
     # Nothing here is worth a traceback in the boot log. This runs unattended,
     # as root, once per boot, and a machine with no rEFInd or no photograph
-    # chosen is not a broken machine -- it just has nothing to do.
+    # chosen is not a broken machine. It just has nothing to do.
     try:
         held = only_one()
         if held == "busy":

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Render what the animations look like, without rebooting.
 
-The easing here is the same integer arithmetic menu.c uses -- no floating point,
-0..256, cubic ease-out -- so a change to the timing can be looked at before it is
+The easing here is the same integer arithmetic menu.c uses. No floating point,
+0..256, cubic ease-out, so a change to the timing can be looked at before it is
 compiled into a bootloader. Frame counts and the frame interval are the
 ANIM_* constants from the patch.
 
@@ -57,12 +57,12 @@ def save_gif(name, frames, ms, scale=None, hold=0, slow=1):
     afresh for every frame, is what made these look like a different project
     from the screenshots beside them: a dune lit by a low sun is a long smooth
     ramp of one hue, and 64 entries cannot hold a ramp, so it came out as bands
-    of flat orange with the tile and the label pulled along with it -- and the
+    of flat orange with the tile and the label pulled along with it, and the
     bands moved between frames, because each frame had picked its own 64.
 
     So: one palette for the whole animation, chosen from every frame at once,
     with all 256 entries, and Floyd-Steinberg to break up what is left. It costs
-    file size -- dithering is noise, and noise does not compress -- which is
+    file size: dithering is noise, and noise does not compress, which is
     why the frames are 960 wide and not 1920.
     """
     size   = scale or SCALE
@@ -79,8 +79,8 @@ def save_gif(name, frames, ms, scale=None, hold=0, slow=1):
     #
     # These animations last between half a second and one; played at their true
     # speed in a loop that restarts the instant it ends, they read as a flicker
-    # rather than as a movement, and you cannot see what happened. So the ones
-    # that are watched rather than measured are slowed, and the finished picture
+    # and you cannot see what happened. The ones that are watched, not
+    # measured, are slowed, and the finished picture
     # is held before it starts again. The caption says which are slowed and by
     # how much, because a picture of an animation that runs at a speed the
     # machine does not is worth nothing if it does not say so.
@@ -128,9 +128,9 @@ def main():
     save_gif("anim-in.gif", frames, IN_STEP_MS, slow=2, hold=1800)
 
     # --- the menu leaving, and the chosen tile travelling to the middle
-    # Colour it the way rEFInd will. The icons on disk are neutral -- the whole
+    # Colour it the way rEFInd will. The icons on disk are neutral: the whole
     # arrangement is that the bootloader takes the colour from the photograph at
-    # boot -- so a preview that skips that step shows Windows in Windows blue and
+    # boot, so a preview that skips that step shows Windows in Windows blue and
     # the menu beside it in the colour of the sand, which is two pictures of two
     # different programs.
     tint  = read_tint(ASSETS)
@@ -178,7 +178,7 @@ def main():
     # Every frame is drawn on the still, not on the frame before it. Drawing
     # each one on its predecessor left the dots where they had been as well as
     # where they were, so eighteen frames added up to a solid ring being traced
-    # out -- which is a perfectly nice animation, and not the one the bootloader
+    # out, which is a perfectly nice animation, and not the one the bootloader
     # runs.
     landed = frames[-1].convert("RGBA")
     d = dot()

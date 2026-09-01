@@ -17,7 +17,7 @@ Type=oneshot
 Nice=10
 IOSchedulingClass=idle
 # Rebuilding every kernel's initramfs on a slow disk takes minutes, and the
-# default for a oneshot is ninety seconds -- after which systemd sends SIGTERM
+# default for a oneshot is ninety seconds, after which systemd sends SIGTERM
 # to whatever is running. That is not a signal to send to a program that is
 # writing the file the machine boots from.
 TimeoutStartSec=900

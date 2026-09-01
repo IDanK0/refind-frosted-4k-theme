@@ -11,7 +11,7 @@ Documentation=https://github.com/IDanK0/refind-frosted-4k-theme
 #
 # Run as that person, it simply works, for a private repository as well as a
 # public one. So this runs as them, reports what it finds, and leaves applying
-# it to a command they type -- which needs root anyway.
+# it to a command they type, which needs root anyway.
 ConditionPathExists=/var/lib/refind-frosted-4k-theme/installed.json
 
 [Service]

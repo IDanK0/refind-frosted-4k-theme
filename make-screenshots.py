@@ -55,7 +55,7 @@ def handoff(stem, t=0.55, ring=True):
 
 
 def label(im, rows):
-    """Caption a stacked comparison, in the picture rather than beside it.
+    """Caption a stacked comparison, inside the picture.
 
     Two frames of the same dune are hard to tell apart at a glance, which is the
     point being made and also the reason the point is invisible without a word
@@ -101,7 +101,7 @@ def icon_sheet():
 
 def main():
     if not os.path.exists(os.path.join(ASSETS, "frost_big.png")):
-        sys.exit("assets missing -- run ./build.py first")
+        sys.exit("assets missing. Run ./build.py first.")
     os.makedirs(SHOTS, exist_ok=True)
 
     # what this machine shows
@@ -110,8 +110,8 @@ def main():
     # Two entries and four, one above the other.
     #
     # These were two separate pictures of a dark desert with tiles on it, several
-    # screens apart, and the thing they were meant to show -- that rEFInd
-    # re-centres the row and every plate travels with its entry -- was left for
+    # screens apart, and the thing they were meant to show; that rEFInd
+    # re-centres the row and every plate travels with its entry: was left for
     # the reader to hold in their head while scrolling. Side by side it is just
     # visible.
     two  = os.path.join(SHOTS, ".two.png")
@@ -183,7 +183,7 @@ def main():
     # This picture used to be a file in screenshots/ that nothing here produced,
     # so it went on showing a ring of the size it was before the ring was
     # changed, and nobody could tell. It is the theme's own background.png with
-    # the theme's own dots on it, in the theme's own places -- the same
+    # the theme's own dots on it, in the theme's own places. The same
     # plymouth.py that writes the theme writes this.
     from plymouth import still, dot, angle, layout, NDOTS, DOT, RING
     from build import BIG
@@ -204,8 +204,8 @@ def main():
     print("  plymouth.png  the splash, drawn by the code that generates it")
 
     # The handover, in one picture. These were two full-screen photographs of
-    # the same dune several screens apart, and the point of them -- that the
-    # second is the first, continued by a different program -- is only visible
+    # the same dune several screens apart, and the point of them; that the
+    # second is the first, continued by a different program: is only visible
     # if you can see both at once.
     # The same system on both halves, or the picture says "Windows, then Ubuntu"
     # and the point of it is lost. plymouth.png is necessarily this machine's

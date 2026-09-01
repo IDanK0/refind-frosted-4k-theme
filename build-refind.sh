@@ -34,7 +34,7 @@ need gcc; need make; need objcopy; need patch; need curl
 # rEFInd's Make.common assumes /usr/lib for all four of these, which is right on
 # Debian, Ubuntu, Arch, Void, Alpine and Fedora, and wrong on openSUSE, Gentoo
 # and Solus (/usr/lib64) and on RHEL and its rebuilds (/usr/lib64/gnuefi). They
-# are plain `=` assignments, so they can simply be overridden -- but only if we
+# are plain `=` assignments, so they can simply be overridden, but only if we
 # know what to override them with. pkg-config knows, where gnu-efi installs a
 # .pc file; RHEL 9 does not ship one, so there is a list to fall back on.
 #
@@ -95,7 +95,7 @@ mkdir -p "$WORK"; cd "$WORK"
 # Unpack and patch from scratch every time.
 #
 # This used to skip everything when build/refind-VER already existed, which is
-# fine until that directory is half-patched -- an interrupted run, an edited
+# fine until that directory is half-patched; an interrupted run, an edited
 # file, a patch that was updated since. Then it silently built something nobody
 # had described. Downloading again costs one tarball; not knowing what was built
 # costs more than that.
@@ -173,7 +173,7 @@ fi
 echo "note: ./setup.sh installs this without overwriting anything. This --install"
 echo "      replaces the binary in $ESP, which is only right if that is already ours."
 
-# Keep a copy of the unpatched binary to fall back to -- but only if the one
+# Keep a copy of the unpatched binary to fall back to, but only if the one
 # currently installed really is unpatched. rEFInd's config tokens live in the
 # binary as EFI (UTF-16LE) strings, so a patched build is recognisable by
 # carrying "frost_radius"; saving that as the fallback would defeat the point.

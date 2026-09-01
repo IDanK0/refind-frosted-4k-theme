@@ -18,7 +18,7 @@ import build
 SHOTS = os.path.join(HERE, "screenshots")
 CELL  = (640, 360)
 HEAD  = 40
-# The same search build.py does, rather than the Debian path build.py exists to
+# The same search build.py does, not the Debian path build.py exists to
 # avoid: this ran for eighty-three seconds rendering every photograph and then
 # fell over on the font at the very end, on any system that is not Debian.
 FONT_BOLD  = build._font("DejaVuSans-Bold.ttf")
