@@ -35,10 +35,23 @@ MARK  = f"# {NAME}: draw the splash at the screen's real resolution."
 
 
 def esp_dir():
-    """Where rEFInd lives, if it lives anywhere."""
-    for d in ("/boot/efi/EFI/refind", "/efi/EFI/refind", "/boot/EFI/refind"):
-        if os.path.isdir(d):
-            return d
+    """Where the boot menu lives, if it lives anywhere.
+
+    setup.sh installs into a directory of its own -- EFI/refind-frosted -- and
+    only uses EFI/refind when a build of this was already there. Looking only in
+    EFI/refind meant that on a machine installed the ordinary way this found
+    nothing, said there was nothing to follow, and the splash never followed the
+    photograph at all: the one thing it exists to do.
+
+    A directory counts only if it holds a theme.conf or a refind.conf, so an
+    empty EFI/refind left behind by something else is not mistaken for ours.
+    """
+    for root in ("/boot/efi", "/efi", "/boot"):
+        for name in ("refind-frosted", "refind"):
+            d = os.path.join(root, "EFI", name)
+            if os.path.isfile(os.path.join(d, "theme.conf")) or \
+               os.path.isfile(os.path.join(d, "refind.conf")):
+                return d
     return None
 
 

@@ -21,15 +21,21 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageFilter, ImageEnhan
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------- geometry
-W, H = 3840, 2160
+#
+# Every measurement here is stated at 3840x2160 and scaled to the screen the
+# theme is actually being built for. It used to be stated at 3840x2160 and used
+# at 3840x2160, full stop, which is fine on a 4K monitor and wrong everywhere
+# else: a 549-pixel icon on a 1080-line screen is half the height of the screen,
+# and rEFInd would fit two of them across it and scroll.
+#
+# XSP and YSP do not scale. They are TILE_XSPACING and TILE_YSPACING, #define'd
+# in menu.c as 8 and 16, and the bootloader uses those numbers whatever the
+# screen is.
+MASTER_W, MASTER_H = 3840, 2160
+W, H = MASTER_W, MASTER_H
 XSP, YSP = 8, 16          # TILE_XSPACING / TILE_YSPACING, #define'd in menu.c
 SS = 4                    # supersampling for the vector artwork
 BIG, SMALL = 549, 48
-
-TILE   = (BIG * 9) // 8           # TileSizes[0] = big_icon_size * 9/8
-TILE1  = (SMALL * 4) // 3         # TileSizes[1] = small_icon_size * 4/3
-R0Y    = (H // 2) - TILE // 2     # the OS row is always vertically centred
-MAXVIS = W // (TILE + XSP) - 1    # entries rEFInd will show without scrolling
 
 # inside the BIG icon canvas
 FROST     = 14                    # frost_radius in refind.conf; the preview matches it
@@ -55,9 +61,44 @@ LOGO      = 218
 NAME_SIZE = 56
 DOT_PX    = 13                    # one dot of the spinner, at 3840x2160
 SHADOW_BLUR, SHADOW_DROP, SHADOW_A = 34, 10, 58    # only visible on a light photograph
-NAME_Y    = PLATE_Y + PLATE + 22
-ICON_OFF  = (TILE - BIG) // 2     # icon is centred in the tile
-PLATE_X   = (BIG - PLATE) // 2
+
+# Everything that follows is derived from the above, and has to be recomputed
+# when the size changes. The module-level values are the 4K ones, so anything
+# that imports build.py without asking for a size gets exactly what it always
+# got.
+_AT_4K = dict(BIG=549, SMALL=48, PLATE=340, PLATE_Y=64, LOGO=218, NAME_SIZE=56,
+              DOT_PX=13, FROST=14, SHADOW_BLUR=34, SHADOW_DROP=10)
+
+
+def configure(width, height):
+    """Set the geometry for a screen of this size. Call before anything else."""
+    global W, H, BIG, SMALL, PLATE, PLATE_Y, LOGO, NAME_SIZE, DOT_PX, FROST
+    global SHADOW_BLUR, SHADOW_DROP, TILE, TILE1, R0Y, MAXVIS, NAME_Y
+    global ICON_OFF, PLATE_X, BOX
+
+    W, H = int(width), int(height)
+    k = H / MASTER_H
+    for name, at4k in _AT_4K.items():
+        globals()[name] = max(1, int(round(at4k * k)))
+    _derive()
+
+
+def _derive():
+    global TILE, TILE1, R0Y, MAXVIS, NAME_Y, ICON_OFF, PLATE_X, BOX
+    TILE   = (BIG * 9) // 8           # TileSizes[0] = big_icon_size * 9/8
+    TILE1  = (SMALL * 4) // 3         # TileSizes[1] = small_icon_size * 4/3
+    R0Y    = (H // 2) - TILE // 2     # the OS row is always vertically centred
+    MAXVIS = W // (TILE + XSP) - 1    # entries rEFInd will show without scrolling
+    NAME_Y   = PLATE_Y + PLATE + max(1, round(22 * H / MASTER_H))
+    ICON_OFF = (TILE - BIG) // 2      # icon is centred in the tile
+    PLATE_X  = (BIG - PLATE) // 2
+    # the strip sampled to judge how bright a photograph is, as a fraction of
+    # the screen rather than as four numbers that only mean anything at 4K
+    BOX = (int(W * 1299 / MASTER_W), int(H * 850 / MASTER_H),
+           int(W * 2541 / MASTER_W), int(H * 1400 / MASTER_H))
+
+
+_derive()
 
 # Pillow refuses to decode anything past about 89 megapixels, on the theory that
 # a file claiming to be enormous is probably an attack. Here the file is one the
@@ -112,7 +153,6 @@ def _font(*names):
 
 FONT_MONO = _font("DejaVuSansMono.ttf")
 FONT_BOLD = _font("DejaVuSans-Bold.ttf")
-BOX = (1299, 850, 2541, 1400)     # strip sampled to judge how bright a photo is
 TARGET_LUM = 30.0                 # what --darken auto aims for
 TARGET_DETAIL = 0.60              # what --blur auto aims for
 BLUR_STEPS = (0, 4, 8, 12, 16, 20, 26, 34, 44)
@@ -544,7 +584,12 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
 
     # font: the glyphs are drawn INVERTED. libeg/text.c does 255-x on dark
     # backgrounds, so what is written here is the complement of what appears.
-    f = ImageFont.truetype(FONT_MONO, 44); asc, desc = f.getmetrics()
+    # 44 point at 3840x2160. rEFInd draws this bitmap at its own cell size
+    # whatever the screen is, so a font drawn for 4K is twice the size it should
+    # be on a 1080-line screen -- the hints along the bottom would be as tall as
+    # the tool icons.
+    f = ImageFont.truetype(FONT_MONO, max(8, round(44 * H / MASTER_H)))
+    asc, desc = f.getmetrics()
     cw, ch = math.ceil(f.getlength("M")), asc + desc
     ink = tuple(255 - c for c in C["text"])
     fi = Image.new("RGBA", (cw * 96, ch), (0, 0, 0, 0)); d = ImageDraw.Draw(fi)
@@ -739,7 +784,17 @@ if __name__ == "__main__":
                          "towards the photograph's own (default: %(default)s)")
     ap.add_argument("--out", default=os.path.join(HERE, "assets"))
     ap.add_argument("--preview", default=None, help="also write a full-screen preview here")
+    ap.add_argument("--size", default=None, metavar="WxH",
+                    help="the screen to draw for (default 3840x2160)")
     a = ap.parse_args()
+    if a.size:
+        try:
+            w, h = (int(v) for v in a.size.lower().split("x"))
+        except ValueError:
+            sys.exit("--size wants WxH, like 1920x1080")
+        if not (640 <= w <= 16384 and 480 <= h <= 16384):
+            sys.exit("--size is out of range")
+        configure(w, h)
     if str(a.darken).lower() != "auto" and not (a.darken.isdigit() and 0 <= int(a.darken) <= 100):
         sys.exit("--darken must be 0-100 or 'auto'")
     if str(a.blur).lower() != "auto" and not (a.blur.isdigit() and 0 <= int(a.blur) <= 60):
@@ -750,4 +805,15 @@ if __name__ == "__main__":
     bg = a.background or os.path.join(HERE, "library",
          next(s["file"] for s in cfg["backgrounds"] if s["slug"] == cfg["default"]).split("/")[-1])
     print(f"  background {bg}")
+    print(f"  screen     {W}x{H}"
+          + ("" if (W, H) == (MASTER_W, MASTER_H) else "  (scaled from the 3840x2160 master)"))
     build(bg, a.darken, a.out, a.preview, blur=a.blur, tint=a.tint)
+
+    # The three numbers refind.conf has to agree with. big_icon_size and
+    # small_icon_size decide the geometry the artwork was drawn for, and
+    # frost_radius is the blur the preview matched -- if the config disagrees
+    # with the artwork the menu is subtly wrong in a way nothing reports.
+    json.dump({"width": W, "height": H, "big_icon_size": BIG,
+               "small_icon_size": SMALL, "frost_radius": FROST},
+              open(os.path.join(a.out, "geometry.json"), "w"), indent=1)
+    print(f"  geometry   big_icon_size {BIG}, small_icon_size {SMALL}, frost_radius {FROST}")

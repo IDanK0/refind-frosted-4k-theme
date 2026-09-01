@@ -12,7 +12,7 @@ Pick **Settings** in the tool row.
 
 | | |
 |---|---|
-| **Background** | every picture in `EFI/refind/backgrounds`, in turn |
+| **Background** | every picture in the menu's own `backgrounds/` on the EFI partition, in turn |
 | **Dimming** | automatic, or 0–80% by hand |
 | **Frosted glass** | 0–32, how far the glass scatters what is behind it |
 | **Colour from photo** | 0–100%, how far the logos and labels move towards the picture's own colour |
@@ -32,7 +32,10 @@ do is put back a photograph you have since removed from `backgrounds/`.
 
 ## Adding a photograph of your own
 
-Copy it into `EFI/refind/backgrounds` on the EFI partition. PNG, JPEG or BMP.
+Copy it into `backgrounds/` inside the menu's own directory on the EFI
+partition — `EFI/refind-frosted/backgrounds`, or `EFI/refind/backgrounds` if you
+installed over an existing rEFInd. The settings screen tells you which, on its
+first line. PNG, JPEG or BMP.
 That is the whole procedure, and it works from anything that can see the
 partition — Linux, Windows, a live USB, some firmware file managers.
 
@@ -41,7 +44,7 @@ picture at boot, so there is nothing to generate and nothing to install.
 
 ```bash
 sudo mount /dev/nvme0n1p1 /mnt          # if it is not mounted already
-sudo cp ~/Pictures/mine.jpg /mnt/EFI/refind/backgrounds/
+sudo cp ~/Pictures/mine.jpg /mnt/EFI/refind-frosted/backgrounds/
 ```
 
 ---
