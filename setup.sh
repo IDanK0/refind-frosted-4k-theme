@@ -10,7 +10,7 @@
 #   sudo ./setup.sh                 look, show the plan, ask, install
 #   sudo ./setup.sh --dry-run       show the plan and stop
 #   sudo ./setup.sh --yes           don't ask
-#   sudo ./setup.sh --status        what is installed, and whether it still matches
+#   sudo ./setup.sh --status        what is installed
 #   sudo ./setup.sh --uninstall     put everything back
 #
 # The rules it will not break:
@@ -38,7 +38,13 @@ ARCH_EFI=x64
 DO=install; ASSUME_YES=0; DRY=0; WANT_SPLASH=1; WANT_MENU=1
 ESP=""; ESP_DIR=""; PERMANENT=0; BACKGROUND=""; INSTALL_DEPS=0; ENTRY_MADE=0
 
-usage() { sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() {
+    # Everything from the third line to the first line that is not a comment,
+    # rather than a hand-counted range -- which had already drifted and was
+    # cutting the last rule off in the middle of a sentence.
+    sed -n '3,/^[^#]/p' "$0" | sed '/^[^#]/d; s/^# \{0,1\}//'
+    exit 0
+}
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -114,19 +120,31 @@ find_esps() {
     # conventional mount points, deduplicated by device. Partition type is what
     # decides -- a vfat filesystem at /boot/efi is not an ESP just because of
     # where somebody mounted it.
-    local out="" src tgt ptype
+    local out="" seen="" src tgt ptype
     while read -r src tgt; do
         [ -n "$src" ] || continue
+        # findmnt -r escapes anything awkward in a path as \x20 and friends;
+        # printf %b turns those back into the characters they stand for, so a
+        # partition mounted at "/boot/EFI System" is still found.
+        tgt=$(printf '%b' "$tgt")
         # findmnt has no column for the partition type, so ask lsblk about the
         # device it named. The type is what decides: a vfat filesystem mounted
         # at /boot/efi is not an EFI System Partition just because of where it
         # was mounted, and the one that matters may be mounted somewhere else.
         ptype=$(lsblk -no PARTTYPE "$src" 2>/dev/null | head -1 | tr -d ' ')
         if [ "${ptype^^}" = "$esp_type_guid" ] || [ "$ptype" = "0xef" ]; then
-            case " $out " in *" $tgt "*) ;; *) out="$out $tgt" ;; esac
+            # One entry per *partition*. The same ESP mounted twice -- a bind
+            # mount, or /boot/efi and /efi both pointing at it -- is one EFI
+            # partition, and reporting it as two would stop the install for a
+            # conflict that does not exist.
+            case " $seen " in *" $src "*) continue ;; esac
+            seen="$seen $src"
+            out="$out
+$tgt"
         fi
     done < <(findmnt -rn -t vfat -o SOURCE,TARGET 2>/dev/null)
-    printf '%s' "${out# }"
+    printf '%s' "${out#
+}"
 }
 
 detect_distro() {
@@ -307,7 +325,7 @@ look() {
         good "EFI partition  $ESP (given with --esp)"
     else
         ESP_CANDIDATES=$(find_esps)
-        local n; n=$(printf '%s\n' $ESP_CANDIDATES | grep -c . || true)
+        local n; n=$(printf '%s' "$ESP_CANDIDATES" | grep -c . || true)
         if [ "$n" = 0 ]; then
             die "no mounted EFI System Partition found.
 
@@ -318,9 +336,10 @@ look() {
         elif [ "$n" -gt 1 ]; then
             say ""
             bad "more than one EFI System Partition is mounted:"
-            for e in $ESP_CANDIDATES; do
-                printf '      %-16s %s\n' "$e" "$(findmnt -no SOURCE "$e")"
-            done
+            while IFS= read -r e; do
+                [ -n "$e" ] || continue
+                printf '      %-24s %s\n' "$e" "$(findmnt -no SOURCE "$e")"
+            done <<< "$ESP_CANDIDATES"
             die "choose one with --esp <path>. On a machine that has been reinstalled it is
         usually the one that already holds EFI/Microsoft or EFI/<your distro>."
         fi
@@ -414,6 +433,7 @@ plan() {
         fi
         say "                 refind_${ARCH_EFI}.efi, refind.conf, the artwork, icons/, backgrounds/"
         say "    keep       anything already there, as *.before-$NAME"
+        say "    write      $ESP/EFI/$ESP_DIR/RESCUE.TXT, first of all, saying how to undo this"
         if [ "$PERMANENT" = 1 ]; then
             say "    firmware   add a boot entry and put it first in the boot order"
         else
@@ -452,10 +472,31 @@ confirm() {
 # ------------------------------------------------------------------ actions
 # Each one records what it is about to do before doing it.
 
+# Did an earlier run of this put that file there?
+#
+# It matters because a second run must not "keep a copy" of the copy it made
+# last time: that is not somebody else's file being preserved, it is ours being
+# duplicated, and after three runs the EFI partition holds three of everything.
+ours() {
+    # Only "remove" counts. A "remove" line means this created the file, so
+    # there was nothing of anyone else's at that path. A "restore" line means
+    # the opposite -- the file was somebody else's and a copy of it was kept --
+    # and matching that too was a bug with teeth: the batch journals before it
+    # copies, so by the time the copy ran the journal already said "restore",
+    # ours() said yes, and the backup of the real file was skipped. The
+    # already-have-a-backup guard in keep_a_copy covers the restore case.
+    [ -f "$JOURNAL" ] || return 1
+    grep -qF "	remove $1" "$JOURNAL" 2>/dev/null
+}
+
 keep_a_copy() {                       # keep_a_copy PATH
     local p="$1"
     [ -e "$p" ] || return 0
     [ -e "$p.before-$NAME" ] && return 0
+    if ours "$p"; then
+        record "remove $p"            # ours already; nothing of anyone else's to keep
+        return 0
+    fi
     record "restore $p"
     cp -a "$p" "$p.before-$NAME"
 }
@@ -464,7 +505,11 @@ put() {                               # put SRC DST MODE
     local src="$1" dst="$2" mode="${3:-0644}"
     if [ -e "$dst" ]; then keep_a_copy "$dst"; else record "remove $dst"; fi
     [ "$DRY" = 1 ] && return 0
-    install -D -m "$mode" "$src" "$dst"
+    # This script does not run under `set -e`, so a failed copy would otherwise
+    # be stepped over and the firmware told to boot something that is not there.
+    install -D -m "$mode" "$src" "$dst" || die "could not write $dst.
+        The EFI partition may be full or read-only. Nothing else was changed;
+        undo what was with: sudo $0 --uninstall"
 }
 
 make_dir() {                          # make_dir PATH
@@ -548,21 +593,42 @@ install_menu() {
         # are told to drop their own photographs into, so it must never be
         # deleted wholesale: what goes is what came from here, and if anything
         # of theirs is left the directory stays with it.
-        local written=()
+        # Work out the whole list, journal it in one go, and only then copy.
+        # Journalling afterwards is the wrong way round: a machine that loses
+        # power between the copy and the record wakes up with files on its EFI
+        # partition that nothing knows how to remove.
+        local sources=() targets=() lines=()
         for f in "$HERE"/assets/icons/*.png; do
             [ -e "$f" ] || continue
-            install -m 0644 "$f" "$D/icons/$(basename "$f")"
-            written+=("remove $D/icons/$(basename "$f")")
+            sources+=("$f"); targets+=("$D/icons/$(basename "$f")")
         done
         for f in "$HERE"/library/*.jpg "$HERE"/library/*.png; do
             [ -e "$f" ] || continue
             case "$(basename "$f")" in preview-sheet.jpg) continue ;; esac
-            install -m 0644 "$f" "$D/backgrounds/$(basename "$f")"
-            written+=("remove $D/backgrounds/$(basename "$f")")
+            sources+=("$f"); targets+=("$D/backgrounds/$(basename "$f")")
         done
-        [ ${#written[@]} -gt 0 ] && record_batch "${written[@]}"
+        local i
+        for i in "${!targets[@]}"; do
+            if [ -e "${targets[$i]}" ] && ! ours "${targets[$i]}"; then
+                lines+=("restore ${targets[$i]}")
+            else
+                lines+=("remove ${targets[$i]}")
+            fi
+        done
+        [ ${#lines[@]} -gt 0 ] && record_batch "${lines[@]}"
+        for i in "${!targets[@]}"; do
+            # keep whatever was there -- installing over an existing rEFInd with
+            # --dir refind would otherwise replace its icons with no way back
+            if [ -e "${targets[$i]}" ] && [ ! -e "${targets[$i]}.before-$NAME" ] \
+               && ! ours "${targets[$i]}"; then
+                cp -a "${targets[$i]}" "${targets[$i]}.before-$NAME" || true
+            fi
+            install -m 0644 "${sources[$i]}" "${targets[$i]}" \
+                || die "could not write ${targets[$i]} -- is the EFI partition full?
+        Nothing else was changed. Run: sudo $0 --uninstall"
+        done
     fi
-    good "artwork        $(find "$D/icons" -name '*.png' 2>/dev/null | wc -l) icons, $(find "$D/backgrounds" -type f 2>/dev/null | wc -l) photographs"
+    good "artwork        $(find "$D/icons" -name '*.png' 2>/dev/null | wc -l) icons, $(find "$D/backgrounds" -type f ! -name "*.before-$NAME" 2>/dev/null | wc -l) photographs"
 
     # refind.conf has to agree with the artwork about three numbers, and the
     # artwork was just drawn for this screen rather than for a 4K one. build.py
@@ -622,11 +688,24 @@ register_with_firmware() {
             return 0
         fi
         record "nvram-del refind-frosted"
-        efibootmgr -q -c -d "/dev/$disk" -p "$part" \
-                   -L "refind-frosted" -l "\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi" >/dev/null \
-            || { warn "efibootmgr refused to create the entry"; return 0; }
+        # -C, not -c. `efibootmgr -c` creates the entry AND puts it at the front
+        # of BootOrder, which is exactly what this is trying not to do: the whole
+        # point of trying it with BootNext is that the boot order is left alone,
+        # so a machine that does not like the new loader goes back to normal by
+        # itself. --create-only creates the entry and nothing else.
+        local err
+        if ! err=$(efibootmgr -C -d "/dev/$disk" -p "$part" \
+                   -L "refind-frosted" -l "\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi" 2>&1 >/dev/null); then
+            warn "efibootmgr refused to create the entry:"
+            printf '%s\n' "$err" | sed 's/^/                 /'
+            return 0
+        fi
         num=$(efibootmgr -v | grep -i "refind-frosted" | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
-        good "firmware       added boot entry Boot$num"
+        if [ -z "$num" ]; then
+            warn "efibootmgr reported success but no entry appeared"
+            return 0
+        fi
+        good "firmware       added boot entry Boot$num, boot order untouched"
         ENTRY_MADE=1
     fi
 
@@ -634,12 +713,24 @@ register_with_firmware() {
     if [ "$PERMANENT" = 1 ]; then
         local order; order=$(efibootmgr | sed -n 's/^BootOrder: //p')
         record "nvram-order $order"
-        efibootmgr -q -o "$num,$(printf '%s' "$order" | sed "s/\b$num,\?//g; s/,$//")" >/dev/null 2>&1
-        good "firmware       first in the boot order"
+        if err=$(efibootmgr -o "$num,$(printf '%s' "$order" | sed "s/\b$num,\?//g; s/,$//")" 2>&1 >/dev/null); then
+            good "firmware       first in the boot order"
+        else
+            warn "could not set the boot order:"
+            printf '%s\n' "$err" | sed 's/^/                 /'
+        fi
     else
-        record "nvram-bootnext none"
-        efibootmgr -q -n "$num" >/dev/null 2>&1
-        good "firmware       BootNext=$num -- the next boot only"
+        # Record whatever BootNext was, so undoing puts that back rather than
+        # deleting a setting somebody else had made.
+        local was; was=$(efibootmgr | sed -n 's/^BootNext: //p')
+        record "nvram-bootnext ${was:-none}"
+        if err=$(efibootmgr -n "$num" 2>&1 >/dev/null); then
+            good "firmware       BootNext=$num -- the next boot only"
+        else
+            warn "could not set BootNext:"
+            printf '%s\n' "$err" | sed 's/^/                 /'
+            ENTRY_MADE=0
+        fi
     fi
 }
 
@@ -829,7 +920,11 @@ do_uninstall() {
             nvram-order)
                 [ -n "$arg" ] && { efibootmgr -q -o "$arg"; note "restored       boot order $arg"; } ;;
             nvram-bootnext)
-                efibootmgr -q -N 2>/dev/null; note "cleared        BootNext" ;;
+                if [ -n "$arg" ] && [ "$arg" != none ]; then
+                    efibootmgr -q -n "$arg" 2>/dev/null; note "restored       BootNext=$arg"
+                else
+                    efibootmgr -q -N 2>/dev/null; note "cleared        BootNext"
+                fi ;;
             alternatives-restore)
                 update-alternatives --remove default.plymouth \
                     "/usr/share/plymouth/themes/$NAME/$NAME.plymouth" >/dev/null 2>&1
@@ -899,7 +994,7 @@ plan
 [ "$DRY" = 1 ] && { say ""; note "--dry-run: nothing was changed."; exit 0; }
 confirm
 
-rescue_card
+[ "$WANT_MENU" = 1 ] && rescue_card
 MENU_OK=1; SPLASH_OK=1
 [ "$WANT_MENU"   = 1 ] && { install_menu   || MENU_OK=0; }
 [ "$WANT_SPLASH" = 1 ] && { install_splash || SPLASH_OK=0; }
