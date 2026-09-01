@@ -9,17 +9,17 @@ show it:
              smooth, so what survives it is noise and nothing else.
   chroma     the same, on the two colour-difference planes. Colour noise is far
              more objectionable than the grey kind and a luminance measure walks
-             straight past it -- which it did, until a crop at 1:1 said otherwise.
+             straight past it, which it did, until a crop at 1:1 said otherwise.
   mottling   average to 8x8, subtract the large-scale trend, and measure what is
              left. A sky's gradient disappears; blotching does not. Without the
-             subtraction this measures the picture rather than its faults, and
+             subtraction this measures the picture, not its faults, and
              says a clean gradient is the worst thing it has ever seen.
   sharpness  where the radially averaged power spectrum meets the noise floor,
              as a fraction of what 3840 pixels could carry. A real photograph
              lands near 75%; an upscale lands far below it.
 
-Everything is measured on the picture as it will be used -- cropped to 16:9 and
-resampled to 3840x2160 -- because that is where the noise ends up, not where it
+Everything is measured on the picture as it will be used; cropped to 16:9 and
+resampled to 3840x2160, because that is where the noise ends up, not where it
 started.
 
     ./check-photos.py 'library/*.jpg'
@@ -84,7 +84,7 @@ if len(sys.argv) < 2:
              "The pattern is quoted so this program expands it, not the shell.")
 
 rows=[]
-# expanduser, because the pattern is quoted to keep the shell off it -- and a
+# expanduser, because the pattern is quoted to keep the shell off it, and a
 # quoted ~ is a directory called "~", which matches nothing and measures nothing.
 for f in sorted(glob.glob(os.path.expanduser(sys.argv[1]))):
     # a contact sheet of the library is not a member of it

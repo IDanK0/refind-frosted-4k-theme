@@ -44,7 +44,7 @@ VEIL_A    = 10                    # the raking light across the top of it
 RIM_A     = 205                   # the lit edge of the pane
 HAIR_A    = 210                   # a bright hairline just inside the top edge
 SWEEP_A   = 0                     # a reflection lying diagonally across the pane;
-                                  # 0 is off, and off is the default -- it reads as a
+                                  # 0 is off, and off is the default. It reads as a
                                   # streak more than as glass. The rim and the hairline
                                   # carry the surface on their own.
 SWEEP_AT, SWEEP_W = 0.34, 0.22    # where it falls, and how broad it is
@@ -99,7 +99,7 @@ def _derive():
 
 _derive()
 
-# Pillow warns above MAX_IMAGE_PIXELS -- about 89 megapixels by default -- and
+# Pillow warns above MAX_IMAGE_PIXELS (about 89 megapixels by default) and
 # refuses outright at twice that, on the theory that a file claiming to be
 # enormous is probably an attack. Here the file is one the person running this
 # chose off their own disk, and a 100-megapixel panorama is a photograph, not an
@@ -125,7 +125,7 @@ def _font(*names):
                 return path
     # fc-match never says no. Ask it for a font that is not installed and it
     # hands back whatever it thinks is closest, which on a minimal system can be
-    # a CJK face -- and then every label in the boot menu is drawn in it without
+    # a CJK face, and then every label in the boot menu is drawn in it without
     # a word of complaint. So check that what came back is actually the family
     # that was asked for.
     for name in names:
@@ -134,7 +134,7 @@ def _font(*names):
         try:
             # Ask for the style as well. "DejaVuSans-Bold" is not a family
             # name; fontconfig reads it as one, finds nothing, and hands back
-            # DejaVu Sans regular -- which passes a family check and renders
+            # DejaVu Sans regular, which passes a family check and renders
             # every bold label in the menu at regular weight.
             query = "DejaVu Sans" + (":style=Bold" if "Bold" in want else "")
             query += ":style=Book" if ("Mono" not in want and "Bold" not in want) else ""
@@ -274,7 +274,7 @@ def accent(im):
 
     A transcription of SampleAccent() in refind/theme.c, integer for integer, so
     that the preview and the machine cannot disagree about a colour. When these
-    were two different formulations -- HSV here, vectors there -- they drifted 24
+    were two different formulations (HSV here, vectors there) they drifted 24
     levels apart, which is a preview showing a colour the machine will not draw.
 
     There is no trigonometry in either. Averaging hues wants a circular mean, and
@@ -339,8 +339,8 @@ RAMP_DARK, RAMP_LIGHT = 46, 219
 CHROMA_FLOOR, CHROMA_CEILING = 20, 52
 RAMP_END = 107          # what the ends keep of the peak chroma, in 255ths.
 # Not zero: a duotone whose chroma vanishes at both ends turns everything white
-# back into grey, and the white things here -- the names under the icons, the rim
-# of the glass, the dots of the spinner -- are most of what carries the colour.
+# back into grey, and the white things here; the names under the icons, the rim
+# of the glass, the dots of the spinner: are most of what carries the colour.
 
 
 def ramp(direction, chroma):
@@ -348,7 +348,7 @@ def ramp(direction, chroma):
 
     BuildRamp() from refind/theme.c, transcribed. A straight line between a dark
     colour and a light one passes through their average, which is close to grey,
-    and the middle of the range is exactly where a logo sits -- so a straight
+    and the middle of the range is exactly where a logo sits, so a straight
     ramp takes the colour out of the one part anybody looks at."""
     peak = max(CHROMA_FLOOR, min((chroma * 45) // 100, CHROMA_CEILING))
     out = []
@@ -366,7 +366,7 @@ def shades(im, strength=1.0):
     """What the theme is drawn in. The flat colours are the neutrals, because the
     artwork on disk is neutral and rEFInd colours it at boot; the ramp is what
     does the colouring, and it is computed the same way there and here."""
-    # A ramp of None means "this photograph has no colour worth taking" -- a
+    # A ramp of None means "this photograph has no colour worth taking"; a
     # black-and-white picture, or a moonlit one. duotone() understands that and
     # leaves the logo alone. What it must never do is leave the key out
     # altogether: three callers index it directly, and a greyscale photograph
@@ -411,8 +411,8 @@ def plate_shadow(blur=SHADOW_BLUR, drop=SHADOW_DROP, alpha=SHADOW_A):
     it: it says the panel is a separate thing, above the picture, which is the
     cue the eye is actually reading.
 
-    It is punched out under the panel itself -- you do not see a thing's own
-    shadow through the front of it -- and it lives inside the icon, so it travels
+    It is punched out under the panel itself: you do not see a thing's own
+    shadow through the front of it, and it lives inside the icon, so it travels
     with the entry the way everything else does."""
     r = int(PLATE * .19)
     sh = Image.new("RGBA", (BIG, BIG), (0, 0, 0, 0))
@@ -430,7 +430,7 @@ def plate_shadow(blur=SHADOW_BLUR, drop=SHADOW_DROP, alpha=SHADOW_A):
 def plate(s, fill=None, light=(255, 255, 255)):
     """A pane of frosted glass.
 
-    The blur behind it is drawn by rEFInd at draw time -- see the patch -- so
+    The blur behind it is drawn by rEFInd at draw time (see the patch), so
     what is built here is only the pane itself: its tint, the light raking across
     it, and the rim. The rim is not uniform: glass catches light along one edge
     and goes nearly dark along the opposite one, and a rim of the same brightness
@@ -450,7 +450,7 @@ def plate(s, fill=None, light=(255, 255, 255)):
     # A reflection lying across the pane. This is the one that does the work: a
     # dark photograph gives the frost nothing to blur and a shadow nothing to
     # darken, so neither of them says "glass". A reflection does not depend on
-    # what is behind at all -- it is light on the surface, and it is what the eye
+    # what is behind at all. It is light on the surface, and it is what the eye
     # reads a glossy pane by. Its value depends only on x + y, so it is built
     # from a single line rather than pixel by pixel.
     n = s * SS
@@ -492,7 +492,7 @@ def frost_mask():
     strength. Blending a blur in proportion to a translucent panel's own alpha
     would leave the background a quarter blurred, which reads as a slightly soft
     photograph rather than as glass. Glass scatters everything that passes
-    through it, and only then tints it -- so the tint belongs to the compositing
+    through it, and only then tints it, so the tint belongs to the compositing
     of the icon that follows, and all that is asked of the stencil is the shape."""
     m = Image.new("RGBA", (BIG * SS, BIG * SS), (0, 0, 0, 0))
     ImageDraw.Draw(m).rounded_rectangle(
@@ -587,8 +587,8 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     tint = max(0, min(100, tint))
     # What is written to disk is neutral. The colours are worked out by rEFInd
     # at boot from whatever photograph is in use, so that a picture chosen from
-    # the boot menu's own settings screen -- or dropped onto the EFI partition
-    # from another operating system entirely -- is themed exactly like the ones
+    # the boot menu's own settings screen, or dropped onto the EFI partition
+    # from another operating system entirely. Is themed exactly like the ones
     # that shipped. The tint is only used here to render an honest preview of
     # what the machine will draw.
     C = shades(bg, 0.0)
@@ -601,7 +601,7 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     # backgrounds, so what is written here is the complement of what appears.
     # 44 point at 3840x2160. rEFInd draws this bitmap at its own cell size
     # whatever the screen is, so a font drawn for 4K is twice the size it should
-    # be on a 1080-line screen -- the hints along the bottom would be as tall as
+    # be on a 1080-line screen; the hints along the bottom would be as tall as
     # the tool icons.
     f = ImageFont.truetype(FONT_MONO, max(8, round(44 * H / MASTER_H)))
     asc, desc = f.getmetrics()
@@ -617,7 +617,7 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
     tone = (C.get("ramp"), tint / 100.0)
     pl = plate(PLATE, C["plate"], C["light"])
     # The Ubuntu release code-names all carry a mascot that exists only as a
-    # 128-pixel bitmap, and all of them are labelled "Ubuntu" anyway -- so they
+    # 128-pixel bitmap, and all of them are labelled "Ubuntu" anyway, so they
     # get the Ubuntu logo, drawn as vectors, and nothing is lost but the blur.
     drawn = (("os_win8", "Windows", logo_windows),
              ("os_win",  "Windows", logo_windows),
@@ -772,7 +772,7 @@ def preview(assets, dst, icons, label, scale=None, tint=None):
     if label:
         # Use the font that was generated, not a fresh one drawn here. Redrawing
         # it is how the preview came to show a grey line while the menu drew a
-        # tinted one -- two pieces of code choosing a colour, only one of which
+        # tinted one. Two pieces of code choosing a colour, only one of which
         # rEFInd ever sees. This reads the atlas and applies rEFInd's own rule
         # from libeg/text.c: on a background darker than 128 the glyphs are
         # inverted, r, g and b but not alpha.
@@ -844,7 +844,7 @@ if __name__ == "__main__":
 
     # The three numbers refind.conf has to agree with. big_icon_size and
     # small_icon_size decide the geometry the artwork was drawn for, and
-    # frost_radius is the blur the preview matched -- if the config disagrees
+    # frost_radius is the blur the preview matched; if the config disagrees
     # with the artwork the menu is subtly wrong in a way nothing reports.
     json.dump({"width": W, "height": H, "big_icon_size": BIG,
                "small_icon_size": SMALL, "frost_radius": FROST},

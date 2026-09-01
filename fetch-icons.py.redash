@@ -62,7 +62,7 @@ def normalise(path):
 
     rsvg-convert keeps the aspect ratio, so a wide logo rendered into a square
     comes out letterboxed and lands on the plate visibly smaller than its
-    neighbours, Devuan's swoosh arrived at two thirds the size of the bitmap it
+    neighbours. Devuan's swoosh arrived at two thirds the size of the bitmap it
     replaced, which reads as a worse icon however much sharper it is. Trimming to
     the ink and re-fitting puts them all on the same footing, which is what a row
     of icons wants anyway."""
@@ -122,7 +122,7 @@ def main():
                  "  openSUSE       sudo zypper install rsvg-convert")
     svgdir = refind_source()
     if svgdir is None:
-        sys.exit("rEFInd source not found. Run ./build-refind.sh first.")
+        sys.exit("rEFInd source not found: run ./build-refind.sh first")
 
     done, notes = {}, []
     for name in sorted(os.listdir(svgdir)):
@@ -173,10 +173,8 @@ def main():
         fh.write("# Where these came from\n\n"
                  "Rewritten by `fetch-icons.py`. Everything not listed is rEFInd's own\n"
                  "128-pixel icon set, kept because no vector of it exists anywhere.\n\n")
-        # A colon, not a dash. The file is regenerated, so the punctuation has
-        # to be fixed here or it comes back the next time this is run.
         for stem in sorted(done):
-            fh.write(f"- `{stem}.png`: {done[stem]}\n")
+            fh.write(f"- `{stem}.png` — {done[stem]}\n")
         fh.write(f"\nStill 128 pixels: {', '.join(left)}\n")
 
     print(f"  {len(done)} icons rebuilt from vectors at {SIZE}px")

@@ -16,8 +16,8 @@
 # The rules it will not break:
 #
 #   * It never overwrites another bootloader. Its files go in a directory of
-#     their own, and the firmware is given a new entry rather than an edited one.
-#   * The first install sets BootNext, not BootOrder -- the machine tries this
+#     their own, and the firmware is given a new entry, never an edited one.
+#   * The first install sets BootNext, not BootOrder. The machine tries this
 #     once and goes back to booting the way it always did if anything is wrong.
 #     `--permanent`, or `sudo ./setup.sh --promote` afterwards, makes it stick.
 #   * It never writes EFI/BOOT/BOOTX64.EFI on an internal disk. That path is the
@@ -41,7 +41,7 @@ AUTO_UPDATE=0
 
 usage() {
     # Everything from the third line to the first line that is not a comment,
-    # rather than a hand-counted range -- which had already drifted and was
+    # instead of a hand-counted range, which had drifted and was
     # cutting the last rule off in the middle of a sentence.
     sed -n '3,/^[^#]/p' "$0" | sed '/^[^#]/d; s/^# \{0,1\}//'
     exit 0
@@ -86,7 +86,7 @@ die()  { printf '\n%serror%s %s\n' "$RED" "$Z" "$*" >&2; exit 1; }
 #
 # Written before the action it describes, and flushed, so that a machine which
 # loses power between the journal line and the action itself is left with a
-# journal that claims slightly more than was done -- which is the safe direction
+# journal that claims slightly more than was done, which is the safe direction
 # to be wrong in, because undoing something that never happened is harmless and
 # failing to undo something that did is not.
 record() {
@@ -96,8 +96,8 @@ record() {
     sync -f "$JOURNAL" 2>/dev/null || sync
 }
 
-# The same, for a batch: one flush at the end rather than one per line. Used for
-# the fifty-odd icons and the photographs, which are written in one go -- a
+# The same, for a batch: one flush at the end, not one per line. Used for
+# the fifty-odd icons and the photographs, which are written in one go. A
 # separate fsync each would be fifty flushes to record fifty copies.
 record_batch() {
     [ "$DRY" = 1 ] && return 0
@@ -120,7 +120,7 @@ esp_type_guid=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
 find_esps() {
     # Every mounted vfat filesystem whose partition really is an ESP, plus the
     # conventional mount points, deduplicated by device. Partition type is what
-    # decides -- a vfat filesystem at /boot/efi is not an ESP just because of
+    # decides; a vfat filesystem at /boot/efi is not an ESP just because of
     # where somebody mounted it.
     local out="" seen="" src tgt ptype
     while read -r src tgt; do
@@ -135,8 +135,8 @@ find_esps() {
         # was mounted, and the one that matters may be mounted somewhere else.
         ptype=$(lsblk -no PARTTYPE "$src" 2>/dev/null | head -1 | tr -d ' ')
         if [ "${ptype^^}" = "$esp_type_guid" ] || [ "$ptype" = "0xef" ]; then
-            # One entry per *partition*. The same ESP mounted twice -- a bind
-            # mount, or /boot/efi and /efi both pointing at it -- is one EFI
+            # One entry per *partition*. The same ESP mounted twice: a bind
+            # mount, or /boot/efi and /efi both pointing at it. Is one EFI
             # partition, and reporting it as two would stop the install for a
             # conflict that does not exist.
             case " $seen " in *" $src "*) continue ;; esac
@@ -151,7 +151,7 @@ $tgt"
 
 detect_distro() {
     # In a subshell. /etc/os-release sets NAME, and NAME here is the name of this
-    # project -- sourcing it directly renamed everything the installer writes,
+    # project; sourcing it directly renamed everything the installer writes,
     # from /usr/share/plymouth/themes/refind-frosted-4k-theme to .../Ubuntu.
     local id pretty like
     id=$(     . /etc/os-release 2>/dev/null; printf '%s' "${ID:-unknown}")
@@ -354,7 +354,7 @@ look() {
     note "               ${ESP_FREE} MB free"
 
     # Where our files go. A directory of our own, so nothing that is already
-    # there is ever at risk -- unless an earlier run of this put a build of ours
+    # there is ever at risk, unless an earlier run of this put a build of ours
     # in the traditional place, in which case keep using it.
     if [ -z "$ESP_DIR" ]; then
         if [ -d "$ESP/EFI/$NAME" ]; then ESP_DIR="$NAME"
@@ -440,7 +440,7 @@ plan() {
         if [ "$PERMANENT" = 1 ]; then
             say "    firmware   add a boot entry and put it first in the boot order"
         else
-            say "    firmware   add a boot entry and set ${B}BootNext${Z} -- the next boot only"
+            say "    firmware   add a boot entry and set ${B}BootNext${Z}, for the next boot only"
             say "               ${DIM}if anything is wrong, the boot after that is unchanged.${Z}"
             say "               ${DIM}make it permanent later with: sudo $0 --promote${Z}"
         fi
@@ -483,7 +483,7 @@ confirm() {
 ours() {
     # Only "remove" counts. A "remove" line means this created the file, so
     # there was nothing of anyone else's at that path. A "restore" line means
-    # the opposite -- the file was somebody else's and a copy of it was kept --
+    # the opposite; the file was somebody else's and a copy of it was kept --
     # and matching that too was a bug with teeth: the batch journals before it
     # copies, so by the time the copy ran the journal already said "restore",
     # ours() said yes, and the backup of the real file was skipped. The
@@ -529,7 +529,7 @@ rescue_card() {
     record "remove $card"
     [ "$DRY" = 1 ] && return 0
     {
-        printf 'refind-frosted-4k-theme -- how to get this machine back\r\n'
+        printf 'refind-frosted-4k-theme: how to get this machine back\r\n'
         printf '=============================================\r\n\r\n'
         printf 'Installed %s on %s\r\n\r\n' "$VERSION" "$(date -u +%Y-%m-%d)"
         printf 'THE BOOT MENU DID NOT APPEAR, OR THE MACHINE WILL NOT START\r\n\r\n'
@@ -592,7 +592,7 @@ install_menu() {
     done
     if [ "$DRY" = 0 ]; then
         # Record every one of these, so that uninstalling removes exactly what
-        # was installed -- and only that. backgrounds/ is the directory people
+        # was installed, and only that. backgrounds/ is the directory people
         # are told to drop their own photographs into, so it must never be
         # deleted wholesale: what goes is what came from here, and if anything
         # of theirs is left the directory stays with it.
@@ -620,21 +620,21 @@ install_menu() {
         done
         [ ${#lines[@]} -gt 0 ] && record_batch "${lines[@]}"
         for i in "${!targets[@]}"; do
-            # keep whatever was there -- installing over an existing rEFInd with
+            # keep whatever was there; installing over an existing rEFInd with
             # --dir refind would otherwise replace its icons with no way back
             if [ -e "${targets[$i]}" ] && [ ! -e "${targets[$i]}.before-$NAME" ] \
                && ! ours "${targets[$i]}"; then
                 cp -a "${targets[$i]}" "${targets[$i]}.before-$NAME" || true
             fi
             install -m 0644 "${sources[$i]}" "${targets[$i]}" \
-                || die "could not write ${targets[$i]} -- is the EFI partition full?
+                || die "could not write ${targets[$i]}. Is the EFI partition full?
         Nothing else was changed. Run: sudo $0 --uninstall"
         done
     fi
     good "artwork        $(find "$D/icons" -name '*.png' 2>/dev/null | wc -l) icons, $(find "$D/backgrounds" -type f ! -name "*.before-$NAME" 2>/dev/null | wc -l) photographs"
 
     # refind.conf has to agree with the artwork about three numbers, and the
-    # artwork was just drawn for this screen rather than for a 4K one. build.py
+    # artwork was just drawn for this screen, not for a 4K one. build.py
     # writes what it used; put those into the copy that gets installed, leaving
     # the one in the repository at its 4K defaults.
     local conf="$HERE/assets/refind.conf.installed"
@@ -723,12 +723,12 @@ register_with_firmware() {
             printf '%s\n' "$err" | sed 's/^/                 /'
         fi
     else
-        # Record whatever BootNext was, so undoing puts that back rather than
+        # Record whatever BootNext was, so undoing puts that back instead of
         # deleting a setting somebody else had made.
         local was; was=$(efibootmgr | sed -n 's/^BootNext: //p')
         record "nvram-bootnext ${was:-none}"
         if err=$(efibootmgr -n "$num" 2>&1 >/dev/null); then
-            good "firmware       BootNext=$num -- the next boot only"
+            good "firmware       BootNext=$num, for the next boot only"
         else
             warn "could not set BootNext:"
             printf '%s\n' "$err" | sed 's/^/                 /'
@@ -888,7 +888,7 @@ install_splash() {
         record "service-disable $NAME-sync.service"
         record "service-disable $NAME-update.timer"
         systemctl enable "$NAME-sync.service" >/dev/null 2>&1
-        good "service        $NAME-sync.service -- checks and repairs, once per boot"
+        good "service        $NAME-sync.service, checks and repairs once per boot"
     else
         warn "no systemd here; run refind-frosted-4k-theme-maintain yourself after changing the photograph"
     fi
@@ -948,7 +948,7 @@ do_promote() {
 do_uninstall() {
     head2 "Putting everything back"
     [ "$(id -u)" -eq 0 ] || die "this needs root: sudo $0 --uninstall"
-    [ -f "$JOURNAL" ] || die "no journal at $JOURNAL -- nothing recorded to undo.
+    [ -f "$JOURNAL" ] || die "no journal at $JOURNAL, so there is nothing recorded to undo.
         RESCUE.TXT on the EFI partition lists the manual steps."
 
     detect_initramfs
@@ -1004,7 +1004,7 @@ do_uninstall() {
     done < <(tac "$JOURNAL")
 
     # Only what the journal recorded. An earlier version deleted the Plymouth
-    # theme here whether or not this install had ever put one there -- so
+    # theme here whether or not this install had ever put one there, so
     # undoing a boot-menu-only install would have taken somebody else's splash
     # with it.
     if [ "$touched_theme" = 1 ] || [ "$touched_initramfs" = 1 ]; then
@@ -1013,7 +1013,7 @@ do_uninstall() {
     fi
 
     # Anything still standing in a directory this install made is something it
-    # did not put there -- a photograph of your own, most likely. Say so rather
+    # did not put there. A photograph of your own, most likely. Say so rather
     # than deleting it, and only look at the directories the journal names.
     local keep
     while IFS= read -r keep; do

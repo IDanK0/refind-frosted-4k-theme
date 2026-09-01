@@ -3,7 +3,7 @@
 #
 # Written after shipping a build that hung before it drew the menu. The fault
 # was a loop that never ended on a negative number, and it took one run of this
-# to find -- against a reboot, a guess, and a broken machine to find nothing.
+# to find. Against a reboot, a guess, and a broken machine to find nothing.
 #
 #   ./test-vm.sh              boot and screenshot        -> vm/shot.png
 #   ./test-vm.sh --settings   also open the settings screen
@@ -64,7 +64,7 @@ chown '"$(id -u):$(id -g)"' "$IMG"'
 # memory for it. The theme allocates three screen-sized images, so testing at
 # the resolution the machine actually runs at is the point.
 # Either flag, in either order. This used to read --1080 out of $2 only, so
-# `./test-vm.sh --1080` -- the form the documentation gave -- silently ran at 4K.
+# `./test-vm.sh --1080`, the form the documentation gave, silently ran at 4K.
 VIDEO="VGA,xres=3840,yres=2160,vgamem_mb=64"
 WANT_SETTINGS=0
 for arg in "$@"; do

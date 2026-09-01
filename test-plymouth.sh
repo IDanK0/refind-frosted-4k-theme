@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Boot this machine's kernel and initramfs in a virtual machine and photograph
 # the splash. No disk, no root filesystem: the kernel starts, the initramfs runs
-# plymouthd, and it waits for a root that will never appear -- which is all the
+# plymouthd, and it waits for a root that will never appear, which is all the
 # time needed to see whether the splash draws.
 #
 # Written after the splash quietly stopped appearing. The cause was a Description
 # wrapped onto a second line in the .plymouth file: Plymouth's key-file reader
 # has no continuations, so the group stopped being read there and ModuleName --
-# the next line -- was never seen. It loaded "(null).so", fell back to the text
+# the next line; was never seen. It loaded "(null).so", fell back to the text
 # theme, and said nothing about any of it on the console.
 #
 #   ./test-plymouth.sh        -> vm/plymouth.png
@@ -51,7 +51,7 @@ im = Image.open(src).convert("RGB"); im.save(os.path.join(vm, "plymouth.png"))
 sd = ImageStat.Stat(im.convert("L")).stddev[0]
 print(f"  vm/plymouth.png   {im.size[0]}x{im.size[1]}")
 if im.size[0] < 1000:
-    print("  still in text mode -- no framebuffer, so this proves nothing")
+    print("  still in text mode: no framebuffer, so this proves nothing")
 else:
     print(f"  content: {sd:.1f}", "-- the splash drew" if sd > 12 else "-- BLANK")
 PY

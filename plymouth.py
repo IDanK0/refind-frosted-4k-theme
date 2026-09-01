@@ -27,8 +27,8 @@ NDOTS   = 6            # Windows uses five; six closes the ring more evenly
 DOT     = DOT_PX       # one dot, at 3840x2160; build.py draws it
 RING    = 70           # radius of the circle the dots travel
 # 70, not the 110 this started at. The ring is a small thing under a name, the
-# way Windows draws it -- 140px across at 3840x2160, 6.5% of the screen's height.
-# At 110 it was 10%, which reads as a hoop rather than as a spinner.
+# way Windows draws it, 140px across at 3840x2160, 6.5% of the screen's height.
+# At 110 it was 10%, and read as a hoop.
 PERIOD  = 1.8          # seconds for one turn
 STAGGER = 0.100        # fraction of a period between one dot and the next
 SWING   = 0.55         # 0 = constant speed, 1 = a full stop at the top
@@ -57,7 +57,7 @@ def pick_icon(assets, os_id):
         p = os.path.join(assets, "icons", f"{stem}.png")
         if os.path.exists(p):
             return p, stem
-    sys.exit("no icon found -- run ./build.py first")
+    sys.exit("no icon found. Run ./build.py first.")
 
 
 def layout(icon):
@@ -68,7 +68,7 @@ def layout(icon):
     hangs below that again, so a tile in the middle of the screen leaves the
     group people actually look at sitting 195px low at 3840x2160.
 
-    So measure the ink rather than the boxes: the top of the panel comes from the
+    So measure the ink, not the boxes. The top of the panel comes from the
     icon's own alpha channel, the bottom from where the ring is, and the whole
     group is shifted until that span is centred. Reading it off the alpha means
     an icon with a longer name, or none at all, still lands right."""
@@ -79,7 +79,7 @@ def layout(icon):
     # row whose alpha exceeds 8; Pillow's getbbox() takes the first row whose
     # alpha exceeds 0, and the icons fade in from alpha 1 over their top
     # thirty-odd rows. Two different answers, 37 rows apart, put the splash 18
-    # pixels below the frame the boot menu had just handed over -- at the one
+    # pixels below the frame the boot menu had just handed over: at the one
     # moment the whole design is about the two being the same picture.
     alpha  = icon.split()[3].point(lambda v: 255 if v > 8 else 0)
     box    = alpha.getbbox()
@@ -93,7 +93,7 @@ def still(assets, icon_path):
     """The menu, drawn with a single entry: what the splash sits on.
 
     The artwork on disk is neutral, because rEFInd colours it at boot. Plymouth
-    has no such moment -- its background is a finished picture -- so the same
+    has no such moment: its background is a finished picture, so the same
     colouring is done here, from the same photograph, or the splash would arrive
     in different colours from the menu it is continuing."""
     bg = Image.open(os.path.join(assets, "background.png")).convert("RGBA")
@@ -140,7 +140,7 @@ def angle(t, i):
     Each dot walks the same eased path, a little later than the one before, so
     they bunch where the path is slow and string out where it is fast. That
     gathering and spilling is what makes the Windows spinner read as one moving
-    thing rather than six dots on a carousel."""
+    thing and not six dots on a carousel."""
     p = (t / PERIOD - i * STAGGER) % 1.0
     g = p - SWING * math.sin(2 * math.pi * p) / (2 * math.pi)
     return 2 * math.pi * g - math.pi / 2
@@ -151,7 +151,7 @@ SCRIPT = """\
 #
 # The photograph and the frosted panel are already in background.png. The
 # background never moves and neither does the panel, so the blur was composited
-# once at build time -- what the boot menu needed a patched bootloader for costs
+# once at build time: what the boot menu needed a patched bootloader for costs
 # nothing here. All that is left to do is turn the ring of dots.
 #
 # Each dot walks the same eased path a little later than the one before it, so
@@ -174,7 +174,7 @@ dot_image  = Image("dot.png");
 # How Plymouth actually lays out more than one screen.
 #
 # It is not a desktop. script-lib-sprite.c takes the largest display, calls that
-# the canvas, and centres every other display on it -- display->x is
+# the canvas, and centres every other display on it. Display->x is
 # (max_width - this_width) / 2. Then it draws *every* sprite on *every* display,
 # offset by that display's origin.
 #
@@ -197,7 +197,7 @@ if (background != NULL) {{
     # Only resample if the picture is not already the size of the canvas.
     # Plymouth's resize is a 2x2 tap over 8.3 million pixels, single threaded,
     # in the initramfs: worth not doing for a picture that is already right. It
-    # usually is -- the theme is built for this screen.
+    # usually is; the theme is built for this screen.
     picture = background;
     if (background.GetWidth() != W) {{
         picture = background.Scale(W, H);
@@ -226,7 +226,7 @@ for (d = 0; d < NDOTS; d++) {{
     dots[d] = Sprite(dot_image.Scale(dot_size, dot_size));
 }}
 
-# Anything not covered by a screen -- letterboxing, a monitor plugged in later --
+# Anything not covered by a screen: letterboxing, a monitor plugged in later --
 # is black, and not some pixel picked out of the corner of the photograph.
 Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
 Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
@@ -323,7 +323,7 @@ Plymouth.SetRefreshFunction(refresh_callback);
 # Every value here must be on ONE line. Plymouth's key-file reader has no notion
 # of continuations, so a Description wrapped onto a second line leaves that line
 # looking like a key with no "=", the group stops being read there, and
-# ModuleName -- which comes after it -- is never seen. Plymouth then loads
+# ModuleName, which comes after it, is never seen. Plymouth then loads
 # "(null).so", fails, and falls back to the text theme: a boot with no splash at
 # all, only console messages, and nothing anywhere saying why.
 THEME = """\
@@ -344,7 +344,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(HERE, "plymouth", NAME))
     ap.add_argument("--os", default=None, help="icon stem to use (default: this system)")
     ap.add_argument("--size", default=None, metavar="WxH",
-                    help="compose at this size instead of 3840x2160 -- give the "
+                    help="compose at this size instead of 3840x2160. Give the "
                          "resolution the machine actually boots at, and Plymouth "
                          "has nothing left to scale")
     args = ap.parse_args()
@@ -365,9 +365,9 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     _, _, _, cy = layout(Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS))
-    # Composed at 3840x2160 -- the master, and the size everything in this
-    # project is drawn at -- and then brought to the screen's own size here,
-    # with Lanczos, rather than left for Plymouth to scale with a two-tap
+    # Composed at 3840x2160. The master, and the size everything in this
+    # project is drawn at, and then brought to the screen's own size here,
+    # with Lanczos, instead of leaving Plymouth to scale it with a two-tap
     # filter at draw time. Reducing 4K to a smaller panel with two taps is
     # what made the splash look grainy while the same photograph looked clean
     # in the boot menu: the menu is drawn at the size it is shown.
