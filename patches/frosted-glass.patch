@@ -187,7 +187,7 @@ diff -urN a/libeg/image.c b/libeg/image.c
                    IN UINTN CompLineOffset, IN UINTN TopLineOffset)
 diff -urN a/libeg/libeg.h b/libeg/libeg.h
 --- a/libeg/libeg.h	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/libeg.h	2026-08-31 15:30:50.999499605 +0200
++++ b/libeg/libeg.h	2026-09-01 23:30:26.737540376 +0200
 @@ -127,6 +127,7 @@
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
                       IN EG_PIXEL *Color);
@@ -196,7 +196,12 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
  
  UINTN egGetFontHeight(VOID);
  UINTN egGetFontCellWidth(VOID);
-@@ -137,13 +138,14 @@
+@@ -134,16 +135,19 @@
+ VOID egMeasureText(IN CHAR16 *Text, OUT UINTN *Width, OUT UINTN *Height);
+ VOID egRenderText(IN CHAR16 *Text, IN OUT EG_IMAGE *CompImage, IN UINTN PosX, IN UINTN PosY, IN UINT8 BGBrightness);
+ VOID egLoadFont(IN CHAR16 *Filename);
++VOID egSetFontRecolour(EG_IMAGE * (*Fn)(IN EG_IMAGE *Src));
++VOID egForgetFontColours(VOID);
  
  VOID egClearScreen(IN EG_PIXEL *Color);
  VOID egDrawImage(IN EG_IMAGE *Image, IN UINTN ScreenPosX, IN UINTN ScreenPosY);
@@ -617,8 +622,54 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
                               EfiBltVideoToBltBuffer, XPos, YPos, 0, 0,
 diff -urN a/libeg/text.c b/libeg/text.c
 --- a/libeg/text.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/text.c	2026-09-01 21:35:37.622511600 +0200
-@@ -112,6 +112,19 @@
++++ b/libeg/text.c	2026-09-01 23:30:26.737485622 +0200
+@@ -47,6 +47,45 @@
+ 
+ static UINTN FontCellWidth = 7;
+ 
++// How the theme wants the glyphs coloured, once they are the right way round.
++//
++// The font on disk is drawn dark, because rEFInd inverts it on a dark
++// background; so the colour has to be laid on AFTER that inversion, never
++// before. Tinting the dark ink and then inverting it gives the complement of
++// the colour that was asked for, which is how a warm photograph produced a
++// blue line of text.
++static EG_IMAGE * (*FontRecolour)(IN EG_IMAGE *Src) = NULL;
++
++VOID egForgetFontColours(VOID) {
++    if (DarkFontImage != NULL) {
++        egFreeImage(DarkFontImage);
++        DarkFontImage = NULL;
++    }
++    if (LightFontImage != NULL) {
++        egFreeImage(LightFontImage);
++        LightFontImage = NULL;
++    }
++} // VOID egForgetFontColours()
++
++VOID egSetFontRecolour(EG_IMAGE * (*Fn)(IN EG_IMAGE *Src)) {
++    FontRecolour = Fn;
++    egForgetFontColours();
++} // VOID egSetFontRecolour()
++
++// Hand an image to the theme and take back what it returns, or keep what we had
++// if it could not oblige.
++static EG_IMAGE * egRecolour(IN EG_IMAGE *Image) {
++    EG_IMAGE *Tinted;
++
++    if ((FontRecolour == NULL) || (Image == NULL))
++        return Image;
++    Tinted = FontRecolour(Image);
++    if (Tinted == NULL)
++        return Image;
++    egFreeImage(Image);
++    return Tinted;
++} // EG_IMAGE * egRecolour()
++
+ //
+ // Text rendering
+ //
+@@ -112,6 +151,19 @@
      if (TextLength * FontCellWidth + PosX > CompImage->Width)
          TextLength = (CompImage->Width - PosX) / FontCellWidth;
  
@@ -638,6 +689,29 @@ diff -urN a/libeg/text.c b/libeg/text.c
      if (BGBrightness < 128) {
         if (LightFontImage == NULL) {
            LightFontImage = egCopyImage(BaseFontImage);
+@@ -122,11 +174,12 @@
+              LightFontImage->PixelData[i].g = 255 - LightFontImage->PixelData[i].g;
+              LightFontImage->PixelData[i].b = 255 - LightFontImage->PixelData[i].b;
+           } // for
++          LightFontImage = egRecolour(LightFontImage);
+        } // if
+        FontImage = LightFontImage;
+     } else {
+        if (DarkFontImage == NULL)
+-          DarkFontImage = egCopyImage(BaseFontImage);
++          DarkFontImage = egRecolour(egCopyImage(BaseFontImage));
+        if (DarkFontImage == NULL)
+           return;
+        FontImage = DarkFontImage;
+@@ -155,6 +208,8 @@
+ VOID egLoadFont(IN CHAR16 *Filename) {
+    if (BaseFontImage)
+       egFreeImage(BaseFontImage);
++   // The light and dark copies were made from the font being replaced.
++   egForgetFontColours();
+ 
+    BaseFontImage = egLoadImage(SelfDir, Filename, TRUE);
+    if (BaseFontImage == NULL)
 diff -urN a/refind/Makefile b/refind/Makefile
 --- a/refind/Makefile	2024-04-06 16:20:34.000000000 +0200
 +++ b/refind/Makefile	2026-09-01 16:28:38.221899050 +0200
@@ -2715,8 +2789,8 @@ diff -urN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -urN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-09-01 21:31:07.609557715 +0200
-@@ -0,0 +1,1091 @@
++++ b/refind/theme.c	2026-09-01 23:30:51.144435585 +0200
+@@ -0,0 +1,1101 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -3055,6 +3129,16 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +
 +    SampleAccent(ThemeBanner, Dir, &Chroma);
 +    BuildRamp(Dir, Chroma);
++
++    // The type takes its colour from the photograph too.
++    //
++    // Everything else already did: the logos, the tool glyphs, the selection,
++    // the spinner's dot all go through TintCopy(). The font did not, so the one
++    // line of text under the menu came out at a flat 160 grey while everything
++    // around it belonged to the picture. libeg applies this after it has
++    // inverted the glyphs for a dark background, which is the only order that
++    // gives the colour that was asked for instead of its complement.
++    egSetFontRecolour(ThemeTint);
 +    LOG(1, LOG_LINE_NORMAL, L"Theme: background '%s', dim %d%%, chroma %d, tint %d%%",
 +        GlobalConfig.BackgroundFile ? GlobalConfig.BackgroundFile : L"(banner)",
 +        Darken, Chroma, GlobalConfig.Tint);
