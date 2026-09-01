@@ -777,14 +777,18 @@ def preview(assets, dst, icons, label, scale=None, tint=None):
         # from libeg/text.c: on a background darker than 128 the glyphs are
         # inverted, r, g and b but not alpha.
         atlas = Image.open(f"{assets}/font.png").convert("RGBA")
-        if tint:
-            atlas = duotone(atlas, table, tint / 100.0)
         cw, ch = atlas.width // 96, atlas.height
         band = c.crop((0, txty, W, min(H, txty + ch))).convert("L")
         if ImageStat.Stat(band).mean[0] < 128:
             r, g, b, a = atlas.split()
             atlas = Image.merge("RGBA", (ImageChops.invert(r), ImageChops.invert(g),
                                          ImageChops.invert(b), a))
+        # Tint AFTER inverting, which is the order libeg uses. The font is drawn
+        # dark on disk because rEFInd inverts it on a dark background; tinting
+        # the dark ink and then inverting gives the complement of the colour
+        # asked for, so a warm photograph produced a blue line of text.
+        if tint:
+            atlas = duotone(atlas, table, tint / 100.0)
         x = (W - cw * len(label)) // 2
         for ch_ in label:
             i = ord(ch_) - 32
