@@ -187,7 +187,7 @@ floating point), so the timing in them is the timing on screen.
 
 ### What it costs to draw
 
-At 3840x2160 a single screen is 8.3 million pixels, 33 MB through the
+At 3840×2160 a single screen is 8.3 million pixels, 33 MB through the
 framebuffer. A wipe from the top of the screen to the bottom is what one of
 those looks like when the firmware is doing the copying. Nobody chose it as an
 effect. So the count is instrumented: `BltImage()` was made to total the pixels
@@ -214,7 +214,7 @@ hide. The tiles still fade themselves in, and that is the part you watch.
 Pixels that did not change are not sent. The dissolve on the way to a system
 used to fade the whole 3840-wide band the menu lives in. It now compares that
 band against the background once and fades only the box the drawn content
-occupies, 972x661 out of 3840x841, a fifth of it. The picture is the same,
+occupies, 972×661 out of 3840×841, a fifth of it. The picture is the same,
 because every pixel outside that box already *is* the background.
 
 Nothing is frosted twice. A blur of a 549-pixel plate is the single most
@@ -247,7 +247,7 @@ it needs to be: 9.9 ms against 0.9 ms for 33 MB, measured on the machine this
 was written on. Against a framebuffer it is far worse than eleven times, because
 a framebuffer is not ordinary memory. Every store leaves the processor for the
 graphics card, and one byte per journey is 33 million journeys to put up a
-single 3840x2160 screen. That wipe from the top of the screen to the bottom is a
+single 3840×2160 screen. That wipe from the top of the screen to the bottom is a
 byte-at-a-time loop.
 
 `egCopyWide()` moves eight bytes per store, four when the addresses are not
@@ -385,7 +385,7 @@ from a 65-entry quarter-wave table with linear interpolation. Against the
 double-precision version the dots land within 0.78 px on a 70 px radius. The two
 animations are the same animation, and Plymouth is the next thing to draw it.
 
-The ring is 140 px across at 3840x2160: 6.5% of the height, roughly what Windows
+The ring is 140 px across at 3840×2160: 6.5% of the height, roughly what Windows
 draws. It began at 10%, which looks like a hoop. Both numbers live twice, in
 `menu.c` and in `plymouth.py`, and they have to agree: the ring the boot menu
 turns and the ring the system turns after it are meant to be one ring that never

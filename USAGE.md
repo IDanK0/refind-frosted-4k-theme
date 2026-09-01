@@ -193,7 +193,7 @@ down before a theme sees it, on the assumption that the theme has HiDPI artwork
 to offer, and the
 script plugin, which this theme uses, has no notion of device scale at all, so
 there is no way for a theme to answer. Left alone, a 4K splash is built at 4K,
-handed to Plymouth as 1920x1080, and blown back up: sharp file, soft screen.
+handed to Plymouth as 1920×1080, and blown back up: sharp file, soft screen.
 
 The theme reads `/etc/os-release` to choose its icon, so it labels itself
 correctly on whatever it is built on. `--os <stem>` overrides that.
@@ -235,7 +235,7 @@ actually spending its time. It costs a file write
 per line, so leave it at 0 unless you are measuring.
 
 `fade` (false) cross-fades the whole screen when the menu appears and when it
-goes away. It is off because at 3840x2160 one screen is 33 MB and the fade is
+goes away. It is off because at 3840×2160 one screen is 33 MB and the fade is
 eight of them, pushed through the framebuffer before anything is on it: on a real
 machine that is the slow wipe from top to bottom. The menu's own entrance, which
 is the part you actually watch, is unaffected either way.
