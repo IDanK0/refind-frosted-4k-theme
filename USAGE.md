@@ -212,8 +212,9 @@ anything else that reads the table.
 
 Windows keeps turning its own ring of dots underneath and cannot be asked not
 to, so what is handed over is the picture *without* ours: the photograph and the
-tile, with Windows' dots below them. It costs about 25 MB of memory the system
-will not reclaim, being a full-screen 24-bit bitmap. `false` leaves the
+tile, with Windows' dots below them. It costs about 25 MB of boot-services
+memory, being a full-screen 24-bit bitmap, which the system reserves for itself
+once it has read it. `false` leaves the
 firmware's own logo alone, and a machine whose firmware publishes no BGRT keeps
 the boot screen it always had.
 
