@@ -577,8 +577,8 @@ diff -urN a/Make.common b/Make.common
 I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
 diff -urN a/refind/bgrt.c b/refind/bgrt.c
 --- a/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/bgrt.c	2026-09-01 16:31:10.184019468 +0200
-@@ -0,0 +1,233 @@
++++ b/refind/bgrt.c	2026-09-01 16:39:47.503175631 +0200
+@@ -0,0 +1,240 @@
 +/*
 + * refind/bgrt.c
 + * Hand the picture on the screen to the next operating system.
@@ -725,9 +725,16 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +} // UINT8 * FindBgrt()
 +
 +// A 24-bit bottom-up BMP, which is the only thing BGRT is allowed to hold, in
-+// memory the operating system will not take back. Windows reads it while boot
-+// services are still up; Linux reads it much later, from a running kernel, so
-+// the pages have to be ones nobody reclaims.
++// boot-services memory, which is where a firmware puts its own.
++//
++// Not in the memory that is never reclaimed, which was the careful-looking
++// choice and the wrong one: Linux refuses a BGRT whose image is anywhere but
++// EFI_BOOT_SERVICES_DATA -- "Ignoring BGRT: invalid image address" -- because
++// that is what firmware does, and a table pointing anywhere else is more likely
++// to be wrong than to be clever. Nothing is lost by obeying: the pages stay
++// allocated because they are never freed, Windows reads them while boot
++// services are still alive, and Linux reserves them for itself the moment it
++// accepts the table.
 +static UINT8 * MakeBmp(IN EG_IMAGE *Image, OUT UINTN *Size) {
 +    UINTN   Row, Stride, Bytes, Pages, x, y;
 +    UINT8  *Bmp, *Out;
@@ -743,7 +750,7 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    Pages  = (Bytes + 4095) / 4096;
 +
 +    Status = refit_call4_wrapper(BS->AllocatePages, AllocateAnyPages,
-+                                 EfiACPIMemoryNVS, Pages, &Where);
++                                 EfiBootServicesData, Pages, &Where);
 +    if (EFI_ERROR(Status) || (Where == 0)) {
 +        LOG(1, LOG_LINE_NORMAL, L"No memory for the boot logo (%d pages): %r", (INTN) Pages, Status);
 +        return NULL;
