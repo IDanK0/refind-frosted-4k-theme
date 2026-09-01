@@ -558,8 +558,8 @@ def detail(im):
     """High-frequency energy in the strip the plates sit on: how much drawing
     would still be legible through the glass.
 
-    This is what decides --blur auto. The plate cannot blur what is behind it —
-    it does not know where rEFInd will draw it — and raising its opacity only
+    This is what decides --blur auto. The plate cannot blur what is behind it,
+    since it does not know where rEFInd will draw it, and raising its opacity only
     fades detail rather than removing it. Softening the whole photograph is the
     one treatment that is correct at every position, so it is applied only as
     much as the photograph actually needs."""
