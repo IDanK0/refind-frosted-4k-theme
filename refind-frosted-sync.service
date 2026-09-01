@@ -1,0 +1,19 @@
+[Unit]
+Description=Follow the boot menu's photograph into the splash
+Documentation=https://github.com/IDanK0/refind-frosted
+# The EFI partition has to be there to be read, and nothing here is urgent
+# enough to hold the boot up: this runs once the system is already up, notices
+# on almost every boot that nothing has changed, and stops.
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/bin/refind-splash-sync
+# A machine with no rEFInd, no photograph chosen yet, or no way to rebuild an
+# initramfs is not a broken machine; it just has nothing to do here.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

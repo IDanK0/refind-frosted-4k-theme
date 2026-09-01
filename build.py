@@ -59,8 +59,34 @@ NAME_Y    = PLATE_Y + PLATE + 22
 ICON_OFF  = (TILE - BIG) // 2     # icon is centred in the tile
 PLATE_X   = (BIG - PLATE) // 2
 
-FONT_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+def _font(*names):
+    """Find a font file by name, wherever this distribution keeps its fonts.
+
+    Debian puts DejaVu under truetype/dejavu, Fedora under dejavu-sans-fonts,
+    Arch under TTF, and asking fontconfig works when none of those do. Hard-coding
+    the Debian path made the theme buildable on Debian and nowhere else, which is
+    the opposite of the point: the splash has to be installable on whatever
+    system is being booted."""
+    import subprocess
+    roots = ("/usr/share/fonts", "/usr/local/share/fonts",
+             os.path.expanduser("~/.local/share/fonts"))
+    for name in names:
+        for root in roots:
+            for path in glob.glob(os.path.join(root, "**", name), recursive=True):
+                return path
+    for name in names:
+        try:
+            out = subprocess.run(["fc-match", "-f", "%{file}", os.path.splitext(name)[0]],
+                                 capture_output=True, text=True, timeout=5)
+            if out.returncode == 0 and os.path.exists(out.stdout.strip()):
+                return out.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    raise SystemExit("no DejaVu font found: install fonts-dejavu (or dejavu-sans-fonts)")
+
+
+FONT_MONO = _font("DejaVuSansMono.ttf")
+FONT_BOLD = _font("DejaVuSans-Bold.ttf")
 BOX = (1299, 850, 2541, 1400)     # strip sampled to judge how bright a photo is
 TARGET_LUM = 30.0                 # what --darken auto aims for
 TARGET_DETAIL = 0.60              # what --blur auto aims for

@@ -334,7 +334,20 @@ def main():
     ap.add_argument("--assets", default=os.path.join(HERE, "assets"))
     ap.add_argument("--out", default=os.path.join(HERE, "plymouth", NAME))
     ap.add_argument("--os", default=None, help="icon stem to use (default: this system)")
+    ap.add_argument("--size", default=None, metavar="WxH",
+                    help="compose at this size instead of 3840x2160 -- give the "
+                         "resolution the machine actually boots at, and Plymouth "
+                         "has nothing left to scale")
     args = ap.parse_args()
+    target = None
+    if args.size:
+        try:
+            tw, th = (int(v) for v in args.size.lower().split("x"))
+        except ValueError:
+            sys.exit("--size wants WxH, like 3840x2160")
+        if tw < 320 or th < 240 or tw > 16384 or th > 16384:
+            sys.exit("--size is out of range")
+        target = (tw, th)
 
     os_id, os_name = which_os()
     if args.os:
@@ -343,8 +356,16 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     _, _, _, cy = layout(Image.open(icon_path).convert("RGBA").resize((BIG, BIG), Image.LANCZOS))
-    still(args.assets, icon_path).save(os.path.join(args.out, "background.png"),
-                                       "PNG", optimize=True)
+    # Composed at 3840x2160 -- the master, and the size everything in this
+    # project is drawn at -- and then brought to the screen's own size here,
+    # with Lanczos, rather than left for Plymouth to scale with a two-tap
+    # filter at draw time. Reducing 4K to a smaller panel with two taps is
+    # what made the splash look grainy while the same photograph looked clean
+    # in the boot menu: the menu is drawn at the size it is shown.
+    picture = still(args.assets, icon_path)
+    if target and (target != picture.size):
+        picture = picture.resize(target, Image.LANCZOS)
+    picture.save(os.path.join(args.out, "background.png"), "PNG", optimize=True)
     dot(args.assets).save(os.path.join(args.out, "dot.png"))
     open(os.path.join(args.out, f"{NAME}.script"), "w").write(
         SCRIPT.format(NAME=NAME, NDOTS=NDOTS, PERIOD=PERIOD, STAGGER=STAGGER,
@@ -356,6 +377,9 @@ def main():
     print(f"  system     {os_name} -> {stem}.png")
     print(f"  spinner    {NDOTS} dots, radius {RING}px, {PERIOD}s a turn, centre y={cy}")
     print(f"  centred    on the ink, not on the tile")
+    print(f"  size       {picture.size[0]}x{picture.size[1]}"
+          + ("  (composed at 3840x2160, brought here with Lanczos)"
+             if picture.size != (W, H) else "  (the master size, nothing scaled)"))
     print(f"  theme      {args.out}  ({size/1048576:.1f} MB)")
 
 

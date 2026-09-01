@@ -534,8 +534,8 @@ same speed and the same easing. `./plymouth.py` builds it,
 What the boot menu needed a patched bootloader for is free here. A panel drawn
 into a rEFInd icon cannot blur what is behind it because it does not know where
 it will end up; a Plymouth background never moves and neither does the panel, so
-the frost is composited once, at build time, into `background.png`. Decoding
-3840×2160 costs 85 ms, once.
+the frost is composited once, when the theme is built, into `background.png`.
+Decoding 3840×2160 costs 85 ms, once.
 
 The dots are the only thing that moves, and they are the only thing the script
 computes. Each one walks the same eased path a little later than the one before,
@@ -549,6 +549,37 @@ is the whole trick.
 The theme picks its icon from `/etc/os-release`, so it shows the logo and the
 name of whatever it was built on, and it is generated from the same geometry as
 the boot menu: the tile lands on exactly the pixel it would have occupied there.
+
+### It cannot be told, so it asks
+
+The menu changes its photograph from its own settings screen, with no operating
+system running. The splash is an initramfs built weeks earlier. There is no way
+for the first to tell the second, so the second asks: `refind-splash-sync` reads
+`theme.conf` off the EFI partition once per boot, compares it with what the
+installed theme was built from, and rebuilds only when they differ. Nearly every
+boot it finds nothing to do and stops in a few milliseconds; when the photograph
+has changed it takes about sixteen seconds at idle priority, after the desktop
+is already up, and the splash matches from the next boot.
+
+The size is asked for the same way. Plymouth scales its background to the screen
+with a two-tap filter at draw time, and reducing a 4K image to a smaller panel
+that way is what made the splash look grainy while the same photograph looked
+clean in the menu — the menu is drawn at the size it is shown. So the theme is
+composed at 3840×2160, the size everything here is drawn at, and then brought to
+the resolution the machine actually boots at with Lanczos, before it is ever put
+in an initramfs. Plymouth then scales nothing.
+
+**And on the next system.** Nothing in the installer assumes Debian: the
+initramfs is rebuilt with whichever of initramfs-tools and dracut is there, the
+theme is selected through `update-alternatives` or `plymouth-set-default-theme`,
+and the fonts are searched for rather than assumed. Install Fedora tomorrow, run
+the same script inside it, and it gets this splash carrying Fedora's logo and
+Fedora's name over the same photograph — because the logo and the name come from
+that system's `os-release` and the photograph comes from the EFI partition both
+of them share. The boot menu itself needs none of that: it already draws the
+right icon, name and ring for anything it can boot, including a system installed
+next year. What the installer buys is the seconds *after* the handover, which
+belong to the system being booted and can only be arranged from inside it.
 
 ---
 
