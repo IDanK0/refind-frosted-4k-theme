@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# refind-frosted: install the boot menu, and the splash that carries on from it.
+# refind-frosted-4k-theme: install the boot menu, and the splash that carries on from it.
 #
 # One command. It looks at the machine first and prints everything it is going to
 # do; nothing is written until you have seen that list. Every write is recorded,
@@ -28,7 +28,7 @@
 set -uo pipefail
 
 VERSION=1.0
-NAME=refind-frosted
+NAME=refind-frosted-4k-theme
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE=/var/lib/$NAME
 JOURNAL=$STATE/journal
@@ -150,7 +150,7 @@ $tgt"
 detect_distro() {
     # In a subshell. /etc/os-release sets NAME, and NAME here is the name of this
     # project -- sourcing it directly renamed everything the installer writes,
-    # from /usr/share/plymouth/themes/refind-frosted to .../Ubuntu.
+    # from /usr/share/plymouth/themes/refind-frosted-4k-theme to .../Ubuntu.
     local id pretty like
     id=$(     . /etc/os-release 2>/dev/null; printf '%s' "${ID:-unknown}")
     pretty=$( . /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-${NAME:-unknown}}")
@@ -346,7 +346,7 @@ look() {
         ESP="$ESP_CANDIDATES"
         good "EFI partition  $ESP  ($(findmnt -no SOURCE "$ESP"))"
     fi
-    touch "$ESP/.refind-frosted-write-test" 2>/dev/null && rm -f "$ESP/.refind-frosted-write-test" \
+    touch "$ESP/.refind-frosted-4k-theme-write-test" 2>/dev/null && rm -f "$ESP/.refind-frosted-4k-theme-write-test" \
         || die "$ESP is not writable (mounted read-only?)"
     ESP_FREE=$(free_mib "$ESP")
     note "               ${ESP_FREE} MB free"
@@ -450,7 +450,7 @@ plan() {
             say "    ${YEL}skipped${Z}    no plymouth or no initramfs tool on this machine"
         else
             say "    write      /usr/share/plymouth/themes/$NAME/"
-            say "    write      /usr/local/bin/refind-splash-sync, and a service that runs it"
+            say "    write      /usr/local/bin/refind-frosted-4k-theme-splash-sync, and a service that runs it"
             say "    set        DeviceScale=1 in /etc/plymouth/plymouthd.conf"
             say "               ${DIM}plymouth halves any screen wider than 2880 for a theme that${Z}"
             say "               ${DIM}cannot ask about it, which is what makes a 4K splash blurry.${Z}"
@@ -527,7 +527,7 @@ rescue_card() {
     record "remove $card"
     [ "$DRY" = 1 ] && return 0
     {
-        printf 'refind-frosted -- how to get this machine back\r\n'
+        printf 'refind-frosted-4k-theme -- how to get this machine back\r\n'
         printf '=============================================\r\n\r\n'
         printf 'Installed %s on %s\r\n\r\n' "$VERSION" "$(date -u +%Y-%m-%d)"
         printf 'THE BOOT MENU DID NOT APPEAR, OR THE MACHINE WILL NOT START\r\n\r\n'
@@ -538,7 +538,7 @@ rescue_card() {
         printf 'TO REMOVE IT COMPLETELY, from that system:\r\n\r\n'
         printf '    sudo %s/setup.sh --uninstall\r\n\r\n' "$HERE"
         printf '  or by hand:\r\n\r\n'
-        printf '    sudo efibootmgr -v            # find the "refind-frosted" entry\r\n'
+        printf '    sudo efibootmgr -v            # find the "refind-frosted-4k-theme" entry\r\n'
         printf '    sudo efibootmgr -b XXXX -B    # delete it by its number\r\n'
         printf '    sudo rm -rf %s/EFI/%s\r\n\r\n' "$ESP" "$ESP_DIR"
         printf '  If the splash was installed too:\r\n\r\n'
@@ -678,7 +678,7 @@ register_with_firmware() {
     [ -n "$disk" ] && [ -n "$part" ] || { warn "could not work out which disk $ESP is on; no boot entry was created"; return 0; }
 
     # Never make a second entry for the same thing.
-    existing=$(efibootmgr -v 2>/dev/null | grep -i "refind-frosted" | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
+    existing=$(efibootmgr -v 2>/dev/null | grep -i "refind-frosted-4k-theme" | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
     if [ -n "$existing" ]; then
         good "firmware       entry Boot$existing already exists; left alone"
         num="$existing"
@@ -688,7 +688,7 @@ register_with_firmware() {
             good "firmware       would add a boot entry on /dev/$disk partition $part"
             return 0
         fi
-        record "nvram-del refind-frosted"
+        record "nvram-del refind-frosted-4k-theme"
         # -C, not -c. `efibootmgr -c` creates the entry AND puts it at the front
         # of BootOrder, which is exactly what this is trying not to do: the whole
         # point of trying it with BootNext is that the boot order is left alone,
@@ -696,12 +696,12 @@ register_with_firmware() {
         # itself. --create-only creates the entry and nothing else.
         local err
         if ! err=$(efibootmgr -C -d "/dev/$disk" -p "$part" \
-                   -L "refind-frosted" -l "\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi" 2>&1 >/dev/null); then
+                   -L "refind-frosted-4k-theme" -l "\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi" 2>&1 >/dev/null); then
             warn "efibootmgr refused to create the entry:"
             printf '%s\n' "$err" | sed 's/^/                 /'
             return 0
         fi
-        num=$(efibootmgr -v | grep -i "refind-frosted" | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
+        num=$(efibootmgr -v | grep -i "refind-frosted-4k-theme" | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
         if [ -z "$num" ]; then
             warn "efibootmgr reported success but no entry appeared"
             return 0
@@ -784,15 +784,15 @@ install_splash() {
     install -m 0644 "$HERE/build.py" "$HERE/plymouth.py" "/usr/local/share/$NAME/"
     install -m 0644 "$HERE"/stock-icons/*.png "/usr/local/share/$NAME/stock-icons/"
     install -m 0644 "$HERE/library/library.json" "/usr/local/share/$NAME/library/"
-    put "$HERE/splash-sync.py" /usr/local/bin/refind-splash-sync 0755
-    good "generator      /usr/local/share/$NAME, /usr/local/bin/refind-splash-sync"
+    put "$HERE/splash-sync.py" /usr/local/bin/refind-frosted-4k-theme-splash-sync 0755
+    good "generator      /usr/local/share/$NAME, /usr/local/bin/refind-frosted-4k-theme-splash-sync"
 
     keep_a_copy /etc/plymouth/plymouthd.conf
 
     # Build and install the theme, at this screen's size, from the menu's own
     # photograph. This also sets DeviceScale and rebuilds the initramfs.
     record "remove /usr/share/plymouth/themes/$NAME"
-    if ! /usr/local/bin/refind-splash-sync --force; then
+    if ! /usr/local/bin/refind-frosted-4k-theme-splash-sync --force; then
         bad "the splash could not be built"
         restore_initramfs
         return 1
@@ -833,7 +833,7 @@ install_splash() {
         systemctl enable "$NAME-sync.service" >/dev/null 2>&1
         good "service        $NAME-sync.service -- follows the menu's photograph from now on"
     else
-        warn "no systemd here; run refind-splash-sync yourself after changing the photograph"
+        warn "no systemd here; run refind-frosted-4k-theme-splash-sync yourself after changing the photograph"
     fi
     return 0
 }
@@ -859,7 +859,7 @@ restore_initramfs() {
 
 # ------------------------------------------------------------------- verbs
 do_status() {
-    head2 "refind-frosted $VERSION"
+    head2 "refind-frosted-4k-theme $VERSION"
     [ -f "$JOURNAL" ] || { note "not installed (no $JOURNAL)"; exit 0; }
     note "journal        $JOURNAL ($(wc -l < "$JOURNAL") actions)"
     local d
@@ -870,7 +870,7 @@ do_status() {
             note "boot menu      $d/EFI/refind (ours)"
     done
     [ -d "/usr/share/plymouth/themes/$NAME" ] && note "splash         /usr/share/plymouth/themes/$NAME"
-    command -v efibootmgr >/dev/null && efibootmgr 2>/dev/null | grep -i refind-frosted | sed 's/^/  firmware       /'
+    command -v efibootmgr >/dev/null && efibootmgr 2>/dev/null | grep -i refind-frosted-4k-theme | sed 's/^/  firmware       /'
     systemctl is-enabled "$NAME-sync.service" >/dev/null 2>&1 && note "service        enabled"
     exit 0
 }
@@ -878,12 +878,12 @@ do_status() {
 do_promote() {
     command -v efibootmgr >/dev/null || die "efibootmgr is not installed"
     local num order
-    num=$(efibootmgr -v | grep -i refind-frosted | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
-    [ -n "$num" ] || die "no refind-frosted boot entry found. Install it first."
+    num=$(efibootmgr -v | grep -i refind-frosted-4k-theme | head -1 | sed 's/^Boot\([0-9A-Fa-f]*\).*/\1/')
+    [ -n "$num" ] || die "no refind-frosted-4k-theme boot entry found. Install it first."
     order=$(efibootmgr | sed -n 's/^BootOrder: //p')
     record "nvram-order $order"
     efibootmgr -q -o "$num,$(printf '%s' "$order" | sed "s/\b$num,\?//g; s/,$//")"
-    good "refind-frosted is now first in the boot order"
+    good "refind-frosted-4k-theme is now first in the boot order"
     note "to put it back: sudo efibootmgr -o $order"
     exit 0
 }
@@ -1006,7 +1006,7 @@ if [ "$WANT_MENU" = 1 ] && [ "$MENU_OK" = 1 ]; then
         warn "the files are installed, but the firmware has no entry pointing at them,"
         warn "so rebooting will not reach the menu. Add one by hand:"
         note "    sudo efibootmgr -c -d /dev/<disk> -p <partition> \\"
-        note "        -L refind-frosted -l '\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi'"
+        note "        -L refind-frosted-4k-theme -l '\\EFI\\$ESP_DIR\\refind_${ARCH_EFI}.efi'"
     elif [ "$PERMANENT" = 1 ]; then
         good "reboot and the boot menu is there, and stays there."
     else

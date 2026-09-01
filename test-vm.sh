@@ -14,12 +14,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VM="$HERE/vm"
 
-# Where the menu is installed. setup.sh puts it in EFI/refind-frosted unless a
+# Where the menu is installed. setup.sh puts it in EFI/refind-frosted-4k-theme unless a
 # build of this was already in EFI/refind; hard-coding the second meant this
 # harness refused to run on any machine installed the ordinary way.
 ESP=""
 for root in /boot/efi /efi /boot; do
-    for name in refind-frosted refind; do
+    for name in refind-frosted-4k-theme refind; do
         [ -f "$root/EFI/$name/refind_x64.efi" ] && { ESP="$root/EFI/$name"; break 2; }
     done
 done

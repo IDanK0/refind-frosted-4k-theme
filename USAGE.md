@@ -31,7 +31,7 @@ do is put back a photograph you have since removed from `backgrounds/`.
 ## Adding a photograph of your own
 
 Copy it into `backgrounds/` inside the menu's own directory on the EFI
-partition: `EFI/refind-frosted/backgrounds`, or `EFI/refind/backgrounds` if you
+partition: `EFI/refind-frosted-4k-theme/backgrounds`, or `EFI/refind/backgrounds` if you
 installed over an existing rEFInd. The settings screen tells you which, on its
 first line. PNG, JPEG or BMP.
 That is the whole procedure, and it works from anything that can see the
@@ -42,7 +42,7 @@ picture at boot, so there is nothing to generate and nothing to install.
 
 ```bash
 sudo mount /dev/nvme0n1p1 /mnt          # if it is not mounted already
-sudo cp ~/Pictures/mine.jpg /mnt/EFI/refind-frosted/backgrounds/
+sudo cp ~/Pictures/mine.jpg /mnt/EFI/refind-frosted-4k-theme/backgrounds/
 ```
 
 ## From the command line, to change the shapes
@@ -120,13 +120,13 @@ actually boots at, and a service that keeps it that way.
 
 The menu can change its photograph at any time, from its own settings screen,
 with no operating system running, and the splash lives in an initramfs built
-weeks earlier, so it cannot be told. Instead it asks: `refind-splash-sync` reads
+weeks earlier, so it cannot be told. Instead it asks: `refind-frosted-4k-theme-splash-sync` reads
 `theme.conf` off the EFI partition once per boot, compares it with what the
 installed theme was built from, and rebuilds only when they differ. Almost every
 boot it finds nothing to do and stops. When you do change the photograph, the
 splash matches it from the boot after.
 
-Run `sudo refind-splash-sync` yourself to have it now instead of next time, and
+Run `sudo refind-frosted-4k-theme-splash-sync` yourself to have it now instead of next time, and
 `--force` to rebuild regardless.
 
 **On another system.** Nothing here assumes Debian. The initramfs is rebuilt
@@ -170,7 +170,7 @@ sudo update-alternatives --set default.plymouth \
 sudo update-initramfs -u
 ```
 
-The installer keeps the working initramfs as `initrd.img-<version>.before-refind-frosted`
+The installer keeps the working initramfs as `initrd.img-<version>.before-refind-frosted-4k-theme`
 before rebuilding.
 
 ## What not to change without regenerating
