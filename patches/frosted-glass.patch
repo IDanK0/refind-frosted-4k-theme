@@ -1,28 +1,59 @@
 diff -urN a/EfiLib/gnuefi-helper.c b/EfiLib/gnuefi-helper.c
 --- a/EfiLib/gnuefi-helper.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/EfiLib/gnuefi-helper.c	2026-08-30 18:13:44.943692147 +0200
-@@ -109,6 +109,7 @@
++++ b/EfiLib/gnuefi-helper.c	2026-09-01 20:36:25.786862641 +0200
+@@ -109,6 +109,19 @@
    @return The length of String.
  
  **/
-+#if 0   /* duplicate symbol against gnu-efi >= 3.0.19 */
++// gnu-efi grew its own AsciiStrLen in 4.0.0, and rEFInd's copy then collides
++// with it. Removing rEFInd's copy outright fixes the collision and breaks every
++// distribution still on gnu-efi 3.x -- which as of this writing is Debian 13,
++// Ubuntu up to 25.10, every released Fedora, RHEL and its rebuilds, openSUSE
++// Leap, Void, Solus and Alpine before 3.22 -- because EfiLib/legacy.c calls it
++// and nothing else defines it. So ask the header which one is installed.
++//
++// There is no version macro to ask. There is a better question: 4.x ends its
++// string section with `#define strlena AsciiStrLen`, while 3.x declares strlena
++// as an ordinary function. So strlena is a preprocessor macro exactly when
++// gnu-efi supplies AsciiStrLen. Checked against 3.0.15, 3.0.18, 4.0.0 and
++// 4.0.4.
++#ifndef strlena
  UINTN
  AsciiStrLen (
    IN      CONST CHAR8               *String
-@@ -129,6 +130,7 @@
+@@ -129,6 +142,7 @@
    }
    return Length;
  }
-+#endif  /* newer gnu-efi provides AsciiStrLen itself */
++#endif  /* !strlena: gnu-efi 3.x, which has no AsciiStrLen of its own */
  
  /**
    Determine whether a given device path is valid.
-I file binari a/EfiLib/libEfiLib.a e b/EfiLib/libEfiLib.a sono diversi
-I file binari a/gzip/libgzip.a e b/gzip/libgzip.a sono diversi
+diff -urN a/Make.common b/Make.common
+--- a/Make.common	2024-04-06 19:05:14.000000000 +0200
++++ b/Make.common	2026-08-30 18:14:51.605763246 +0200
+@@ -83,7 +83,7 @@
+ CFLAGS          = $(OPTIMFLAGS) -fno-stack-protector -fshort-wchar -Wall
+ 
+ # ...for GNU-EFI....
+-GNUEFI_CFLAGS   = -fpic -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol -I../include -I../refind -I../libeg -I../mok -I../gzip
++GNUEFI_CFLAGS   = -DGNU_EFI_USE_REALLOCATEPOOL_ABI=0 -fpic -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol -I../include -I../refind -I../libeg -I../mok -I../gzip
+ 
+ # ...and for TianoCore....
+ TIANO_INCLUDE_DIRS = -I $(TIANOBASE)/MdePkg \
+@@ -121,7 +121,7 @@
+ # objcopy flags for GNU-EFI
+ #
+ 
+-FORMAT          = --target=efi-app-$(ARCH)
++FORMAT          = -O pei-x86-64 --subsystem=10
+ FORMAT_DRIVER   = --target=efi-bsdrv-$(ARCH)
+ 
+ #
 diff -urN a/libeg/image.c b/libeg/image.c
 --- a/libeg/image.c	2024-04-04 00:04:55.000000000 +0200
-+++ b/libeg/image.c	2026-08-31 14:20:01.913780424 +0200
-@@ -632,6 +632,126 @@
++++ b/libeg/image.c	2026-09-01 20:33:32.526884398 +0200
+@@ -632,6 +632,131 @@
      }
  }
  
@@ -106,7 +137,12 @@ diff -urN a/libeg/image.c b/libeg/image.c
 +
 +    A = (EG_PIXEL *) AllocatePool(Total * sizeof(EG_PIXEL));
 +    B = (EG_PIXEL *) AllocatePool(Total * sizeof(EG_PIXEL));
-+    if (!A || !B) { MyFreePool(&A); MyFreePool(&B); return; }
++    // MyFreePool() takes the pointer, not the address of it -- it is FreePool()
++    // with a NULL check, and every other caller in the tree passes it plainly.
++    // Passing &A handed the firmware a stack address to free and leaked both
++    // buffers, which at a 617-pixel tile is three megabytes for every tile
++    // frosted.
++    if (!A || !B) { MyFreePool(A); MyFreePool(B); return; }
 +
 +    // two box passes per axis approximate a Gaussian closely enough
 +    egBoxBlurPass(Image->PixelData, A, W, Hgt, Radius);
@@ -142,14 +178,13 @@ diff -urN a/libeg/image.c b/libeg/image.c
 +            Image->PixelData[i].r = (UINT8) ((Temp + (Temp >> 8)) >> 8);
 +        }
 +    }
-+    MyFreePool(&A);
-+    MyFreePool(&B);
++    MyFreePool(A);
++    MyFreePool(B);
 +} // VOID egFrostImage()
 +
  VOID egRawCompose(IN OUT EG_PIXEL *CompBasePtr, IN EG_PIXEL *TopBasePtr,
                    IN UINTN Width, IN UINTN Height,
                    IN UINTN CompLineOffset, IN UINTN TopLineOffset)
-I file binari a/libeg/libeg.a e b/libeg/libeg.a sono diversi
 diff -urN a/libeg/libeg.h b/libeg/libeg.h
 --- a/libeg/libeg.h	2024-01-28 19:51:20.000000000 +0100
 +++ b/libeg/libeg.h	2026-08-31 15:30:50.999499605 +0200
@@ -179,8 +214,8 @@ diff -urN a/libeg/libeg.h b/libeg/libeg.h
  BOOLEAN egSetTextMode(UINT32 RequestedMode);
 diff -urN a/libeg/screen.c b/libeg/screen.c
 --- a/libeg/screen.c	2024-01-28 19:51:20.000000000 +0100
-+++ b/libeg/screen.c	2026-08-31 17:21:48.593785196 +0200
-@@ -163,6 +163,69 @@
++++ b/libeg/screen.c	2026-09-01 20:46:56.960689801 +0200
+@@ -163,6 +163,82 @@
  // Stores the results in the file-global variables egScreenWidth,
  // egScreenHeight, and egHasGraphics. The first two of these will be
  // unchanged if neither GraphicsOutput nor UgaDraw is a valid pointer.
@@ -222,6 +257,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +                                        { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 }};
 +
 +static UINT64 FastenedBase = 0;
++static UINT64 FastenedSize = 0;
 +
 +static VOID egSpeedUpFrameBuffer(VOID) {
 +    REFIND_CPU_ARCH_PROTOCOL *Cpu = NULL;
@@ -232,12 +268,24 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
 +        return;
 +    if (GraphicsOutput->Mode->FrameBufferBase == 0)
 +        return;
-+    if (GraphicsOutput->Mode->FrameBufferBase == FastenedBase)
-+        return;                     // asked already; the mode has not changed
-+    FastenedBase = GraphicsOutput->Mode->FrameBufferBase;
 +    Size = (UINT64) GraphicsOutput->Mode->FrameBufferSize;
 +    if (Size == 0)
 +        return;
++    // Both, not just the address.
++    //
++    // The address is the aperture the card was given, and on every firmware
++    // worth the name it is the same for every mode. What changes when the mode
++    // changes is the size: the spec defines FrameBufferSize as the memory the
++    // *active* mode needs. Testing the address alone meant this ran once, at
++    // whatever resolution the firmware powered up in -- 800x600 in the test
++    // machine, 1024x768 on plenty of real ones -- and marked two or three
++    // megabytes as write-combining. The menu then switched to the mode it wanted
++    // and drew thirty-three megabytes a screen, all but the first three of them
++    // through uncached memory, and the guard said the work was already done.
++    if ((GraphicsOutput->Mode->FrameBufferBase == FastenedBase) && (Size == FastenedSize))
++        return;                     // asked already, for this mode
++    FastenedBase = GraphicsOutput->Mode->FrameBufferBase;
++    FastenedSize = Size;
 +    Status = LibLocateProtocol(&CpuArchProtocolGuid, (VOID **) &Cpu);
 +    if (EFI_ERROR(Status) || (Cpu == NULL) || (Cpu->SetMemoryAttributes == NULL))
 +        return;
@@ -250,7 +298,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  static VOID egDetermineScreenSize(VOID) {
      EFI_STATUS Status = EFI_SUCCESS;
      UINT32 UGAWidth, UGAHeight, UGADepth, UGARefreshRate;
-@@ -173,6 +236,7 @@
+@@ -173,6 +249,7 @@
          egScreenWidth = GraphicsOutput->Mode->Info->HorizontalResolution;
          egScreenHeight = GraphicsOutput->Mode->Info->VerticalResolution;
          egHasGraphics = TRUE;
@@ -258,7 +306,21 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      } else if (UgaDraw != NULL) {
          Status = refit_call5_wrapper(UgaDraw->GetMode, UgaDraw, &UGAWidth, &UGAHeight, &UGADepth, &UGARefreshRate);
          if (EFI_ERROR(Status)) {
-@@ -445,6 +509,12 @@
+@@ -347,6 +424,13 @@
+         } // if/else
+     } // if/else if (UgaDraw != NULL)
+ 
++    // A new mode means a new framebuffer size, and write-combining is set over a
++    // size. Asking again here is what makes it cover the mode actually being
++    // drawn to rather than the one the firmware happened to power up in; the
++    // guard inside makes a call that changes nothing free.
++    if (ModeSet)
++        egSpeedUpFrameBuffer();
++
+     return (ModeSet);
+ } // BOOLEAN egSetScreenSize()
+ 
+@@ -445,6 +529,12 @@
  // Drawing to the screen
  //
  
@@ -271,7 +333,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  VOID egClearScreen(IN EG_PIXEL *Color)
  {
      EFI_UGA_PIXEL FillColor;
-@@ -462,6 +532,7 @@
+@@ -462,6 +552,7 @@
          FillColor.Blue  = 0x0;
      }
      FillColor.Reserved = 0;
@@ -279,7 +341,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  
      if (GraphicsOutput != NULL) {
          // EFI_GRAPHICS_OUTPUT_BLT_PIXEL and EFI_UGA_PIXEL have the same
-@@ -501,16 +572,14 @@
+@@ -501,16 +592,14 @@
         egComposeImage(CompImage, Image, 0, 0);
      }
  
@@ -304,7 +366,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      if ((CompImage != GlobalConfig.ScreenBackground) && (CompImage != Image))
         egFreeImage(CompImage);
  } /* VOID egDrawImage() */
-@@ -518,17 +587,207 @@
+@@ -518,17 +607,207 @@
  // Display an unselected icon on the screen, so that the background image shows
  // through the transparency areas. The BadgeImage may be NULL, in which case
  // it's not composited in.
@@ -513,7 +575,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
  VOID egDrawImageArea(IN EG_IMAGE *Image,
                       IN UINTN AreaPosX, IN UINTN AreaPosY,
                       IN UINTN AreaWidth, IN UINTN AreaHeight,
-@@ -541,6 +800,12 @@
+@@ -541,6 +820,12 @@
      if (AreaWidth == 0)
          return;
  
@@ -526,7 +588,7 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
      if (GraphicsOutput != NULL) {
          refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
                               EfiBltBufferToVideo, AreaPosX, AreaPosY, ScreenPosX, ScreenPosY, AreaWidth, AreaHeight,
-@@ -607,8 +872,25 @@
+@@ -607,8 +892,25 @@
          return NULL;
      }
  
@@ -553,32 +615,22 @@ diff -urN a/libeg/screen.c b/libeg/screen.c
          refit_call10_wrapper(GraphicsOutput->Blt, GraphicsOutput,
                               (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Image->PixelData,
                               EfiBltVideoToBltBuffer, XPos, YPos, 0, 0,
-diff -urN a/Make.common b/Make.common
---- a/Make.common	2024-04-06 19:05:14.000000000 +0200
-+++ b/Make.common	2026-08-30 18:14:51.605763246 +0200
-@@ -83,7 +83,7 @@
- CFLAGS          = $(OPTIMFLAGS) -fno-stack-protector -fshort-wchar -Wall
+diff -urN a/refind/Makefile b/refind/Makefile
+--- a/refind/Makefile	2024-04-06 16:20:34.000000000 +0200
++++ b/refind/Makefile	2026-09-01 16:28:38.221899050 +0200
+@@ -36,7 +36,7 @@
+                   -L$(SRCDIR)/../EfiLib/ -L$(SRCDIR)/../gzip
+ LOCAL_LIBS      = -leg -lmok -lEfiLib -lgzip
  
- # ...for GNU-EFI....
--GNUEFI_CFLAGS   = -fpic -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol -I../include -I../refind -I../libeg -I../mok -I../gzip
-+GNUEFI_CFLAGS   = -DGNU_EFI_USE_REALLOCATEPOOL_ABI=0 -fpic -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol -I../include -I../refind -I../libeg -I../mok -I../gzip
- 
- # ...and for TianoCore....
- TIANO_INCLUDE_DIRS = -I $(TIANOBASE)/MdePkg \
-@@ -121,7 +121,7 @@
- # objcopy flags for GNU-EFI
- #
- 
--FORMAT          = --target=efi-app-$(ARCH)
-+FORMAT          = -O pei-x86-64 --subsystem=10
- FORMAT_DRIVER   = --target=efi-bsdrv-$(ARCH)
- 
- #
-I file binari a/mok/libmok.a e b/mok/libmok.a sono diversi
+-OBJS            = apple.o config.o crc32.o driver_support.o gpt.o icns.o \
++OBJS            = apple.o config.o crc32.o driver_support.o gpt.o icns.o theme.o bgrt.o \
+                   install.o launch_efi.o launch_legacy.o lib.o line_edit.o \
+                   linux.o log.o main.o menu.o mystrings.o pointer.o scan.o \
+                   screen.o
 diff -urN a/refind/bgrt.c b/refind/bgrt.c
 --- a/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/bgrt.c	2026-09-01 16:48:25.335648916 +0200
-@@ -0,0 +1,258 @@
++++ b/refind/bgrt.c	2026-09-01 20:22:59.872397882 +0200
+@@ -0,0 +1,323 @@
 +/*
 + * refind/bgrt.c
 + * Hand the picture on the screen to the next operating system.
@@ -647,6 +699,30 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    return NULL;
 +} // UINT8 * AcpiTablePointer()
 +
++// Does this table start with these four (or eight) characters?
++static BOOLEAN Signature(IN UINT8 *At, IN const char *Want) {
++    UINTN i;
++
++    if (At == NULL)
++        return FALSE;
++    for (i = 0; Want[i] != '\0'; i++)
++        if (At[i] != (UINT8) Want[i])
++            return FALSE;
++    return TRUE;
++} // BOOLEAN Signature()
++
++// ACPI structures are checksummed by summing every byte to zero.
++static BOOLEAN SumsToZero(IN UINT8 *At, IN UINTN Length) {
++    UINTN i;
++    UINT8 Sum = 0;
++
++    if ((At == NULL) || (Length == 0) || (Length > 0x10000))
++        return FALSE;
++    for (i = 0; i < Length; i++)
++        Sum = (UINT8) (Sum + At[i]);
++    return (Sum == 0);
++} // BOOLEAN SumsToZero()
++
 +static UINT32 ReadU32(IN UINT8 *At) {
 +    return (UINT32) At[0] | ((UINT32) At[1] << 8) |
 +           ((UINT32) At[2] << 16) | ((UINT32) At[3] << 24);
@@ -691,6 +767,22 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    if (Rsdp == NULL)
 +        return NULL;
 +
++    // Check it really is the root pointer before believing anything in it.
++    //
++    // Everything that follows is an address read out of firmware-supplied memory
++    // and then dereferenced. On a machine whose configuration table points at
++    // something that is not an RSDP -- a table left behind by an earlier
++    // bootloader, a firmware bug, a deliberately malformed one -- following it
++    // reads whatever those eight bytes happened to be, as a pointer. The cost of
++    // being sure is thirty bytes of arithmetic, once, and the cost of not being
++    // sure is a machine that hangs before it boots.
++    if (!Signature(Rsdp, "RSD PTR "))
++        return NULL;
++    if (!SumsToZero(Rsdp, 20))               // ACPI 1.0 checksum: the first 20 bytes
++        return NULL;
++    if ((Rsdp[15] >= 2) && !SumsToZero(Rsdp, ReadU32(Rsdp + 20)))
++        return NULL;                          // ACPI 2.0 adds one over the whole thing
++
 +    // Revision 2 and up carry a 64-bit XSDT; before that only a 32-bit RSDT.
 +    if ((Rsdp[15] >= 2) && (ReadU32(Rsdp + 24) || ReadU32(Rsdp + 28))) {
 +        Address = (UINT64) ReadU32(Rsdp + 24) | ((UINT64) ReadU32(Rsdp + 28) << 32);
@@ -703,6 +795,8 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +        return NULL;
 +
 +    Table  = (UINT8 *) (UINTN) Address;
++    if (!Signature(Table, (Width == 8) ? "XSDT" : "RSDT"))
++        return NULL;
 +    Length = ReadU32(Table + 4);
 +    if ((Length <= ACPI_HEADER_LENGTH) || (Length > 0x10000))
 +        return NULL;
@@ -718,8 +812,13 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +            Entry = (UINT8 *) (UINTN) ReadU32(List + i * 4);
 +        if (Entry == NULL)
 +            continue;
-+        if ((Entry[0] == 'B') && (Entry[1] == 'G') && (Entry[2] == 'R') && (Entry[3] == 'T'))
++        if (Signature(Entry, "BGRT")) {
++            // A BGRT is exactly what ACPI 5.0 says it is. One that is not is
++            // one somebody else is using for something else.
++            if (ReadU32(Entry + 4) < BGRT_LENGTH)
++                continue;
 +            return Entry;
++        }
 +    }
 +    return NULL;
 +} // UINT8 * FindBgrt()
@@ -735,6 +834,13 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +// allocated because they are never freed, Windows reads them while boot
 +// services are still alive, and Linux reserves them for itself the moment it
 +// accepts the table.
++// The last one handed over, so a second attempt does not abandon the first.
++// A launch that fails -- a loader that has been moved, a kernel that is not
++// there -- comes back to the menu, and the next attempt used to allocate
++// another twenty-five megabytes and forget the address of the one before it.
++static EFI_PHYSICAL_ADDRESS LastBmp = 0;
++static UINTN                LastPages = 0;
++
 +static UINT8 * MakeBmp(IN EG_IMAGE *Image, OUT UINTN *Size) {
 +    UINTN   Row, Stride, Bytes, Pages, x, y;
 +    UINT8  *Bmp, *Out;
@@ -749,13 +855,24 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    Bytes  = BMP_HEADER_LENGTH + Stride * Image->Height;
 +    Pages  = (Bytes + 4095) / 4096;
 +
++    // Give back the previous one first. Nothing can still be reading it: the
++    // only consumer is the system this is about to hand the machine to, and if
++    // that had happened this code would not be running.
++    if ((LastBmp != 0) && (LastPages > 0)) {
++        refit_call2_wrapper(BS->FreePages, LastBmp, LastPages);
++        LastBmp = 0;
++        LastPages = 0;
++    }
++
 +    Status = refit_call4_wrapper(BS->AllocatePages, AllocateAnyPages,
 +                                 EfiBootServicesData, Pages, &Where);
 +    if (EFI_ERROR(Status) || (Where == 0)) {
 +        LOG(1, LOG_LINE_NORMAL, L"No memory for the boot logo (%d pages): %r", (INTN) Pages, Status);
 +        return NULL;
 +    }
-+    Bmp = (UINT8 *) (UINTN) Where;
++    Bmp       = (UINT8 *) (UINTN) Where;
++    LastBmp   = Where;
++    LastPages = Pages;
 +
 +    // Every one of the fifty-four bytes, written on purpose, including the ones
 +    // that are zero.
@@ -857,8 +974,35 @@ diff -urN a/refind/bgrt.h b/refind/bgrt.h
 +#endif
 diff -urN a/refind/config.c b/refind/config.c
 --- a/refind/config.c	2024-04-04 22:01:00.000000000 +0200
-+++ b/refind/config.c	2026-09-01 16:28:02.371152006 +0200
-@@ -695,6 +695,8 @@
++++ b/refind/config.c	2026-09-01 20:24:26.570232833 +0200
+@@ -548,6 +548,26 @@
+         MyFreePool(GlobalConfig.DefaultSelection);
+         GlobalConfig.DefaultSelection = StrDuplicate(L"+");
+         GlobalConfig.LinuxPrefixes = StrDuplicate(LINUX_PREFIXES);
++
++        // Everything this theme adds, set to what its documentation says it is.
++        //
++        // C leaves the tail of a partly-written struct initialiser at zero, and
++        // the tail of GlobalConfig is where all of these live -- so without this
++        // the compiled-in default for every one of them was off: no frost, no
++        // animation, no splash, no boot logo, an undimmed photograph and logos
++        // in their own brand colours. That is invisible as long as the
++        // refind.conf that ships here is the one being read, and it is exactly
++        // what somebody sees who keeps their own refind.conf and copies in only
++        // the artwork. The defaults belong in the program, and the file that
++        // ships with it should agree with them rather than be required by them.
++        GlobalConfig.FrostRadius   = 14;
++        GlobalConfig.HandoffSplash = 1800;
++        GlobalConfig.EntranceDelay = 0;
++        GlobalConfig.BgrtLogo      = TRUE;
++        GlobalConfig.Animations    = TRUE;
++        GlobalConfig.FadeScreen    = FALSE;
++        GlobalConfig.Darken        = 101;   // automatic; theme.c calls it DARKEN_AUTO
++        GlobalConfig.Tint          = 100;
+     } // if
+ 
+     if (!FileExists(SelfDir, FileName)) {
+@@ -695,6 +715,8 @@
                     GlobalConfig.ShowTools[i - 1] = TAG_WINDOWS_RECOVERY;
                  } else if (MyStriCmp(FlagName, L"mok_tool")) {
                     GlobalConfig.ShowTools[i - 1] = TAG_MOK_TOOL;
@@ -867,7 +1011,7 @@ diff -urN a/refind/config.c b/refind/config.c
                  } else if (MyStriCmp(FlagName, L"fwupdate")) {
                     GlobalConfig.ShowTools[i - 1] = TAG_FWUPDATE_TOOL;
                  } else if (MyStriCmp(FlagName, L"csr_rotate")) {
-@@ -800,6 +802,52 @@
+@@ -800,6 +822,52 @@
                  }
              } // for (graphics_on tokens)
  
@@ -1045,21 +1189,9 @@ diff -urN a/refind/main.c b/refind/main.c
              case TAG_EXIT:    // Terminate rEFInd
                  if ((MokProtocol) && !SecureBootUninstall()) {
                     MainLoopRunning = FALSE;   // just in case we get this far
-diff -urN a/refind/Makefile b/refind/Makefile
---- a/refind/Makefile	2024-04-06 16:20:34.000000000 +0200
-+++ b/refind/Makefile	2026-09-01 16:28:38.221899050 +0200
-@@ -36,7 +36,7 @@
-                   -L$(SRCDIR)/../EfiLib/ -L$(SRCDIR)/../gzip
- LOCAL_LIBS      = -leg -lmok -lEfiLib -lgzip
- 
--OBJS            = apple.o config.o crc32.o driver_support.o gpt.o icns.o \
-+OBJS            = apple.o config.o crc32.o driver_support.o gpt.o icns.o theme.o bgrt.o \
-                   install.o launch_efi.o launch_legacy.o lib.o line_edit.o \
-                   linux.o log.o main.o menu.o mystrings.o pointer.o scan.o \
-                   screen.o
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-09-01 17:05:44.420501212 +0200
++++ b/refind/menu.c	2026-09-01 20:52:40.520235512 +0200
 @@ -59,7 +59,9 @@
  #include "screen.h"
  #include "lib.h"
@@ -1216,7 +1348,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1128,411 @@
+@@ -1074,31 +1128,482 @@
  // graphical main menu style
  //
  
@@ -1248,6 +1380,13 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// the machine is, and the animation takes the same time either way.
 +#define ANIM_IN_FRAMES   (9)      // the menu arriving: steps of the fade
 +#define ANIM_IN_STEP_US  (40000)  // ...and one tile begins each step after the last
++#define ANIM_IN_RISE     (44)     // ...and climbs this far into place, at 2160 lines
++// A tile appearing out of a dark photograph by fading alone is a change of a few
++// levels of grey over a third of a second, which is close to no change at all --
++// the eye is far better at noticing that something moved than that something
++// got slightly lighter. So it moves: forty-four lines at 4K, about an eighth of
++// a tile, up into its place as it arrives. It costs one extra band of
++// background per tile, cropped once, and nothing per frame.
 +#define ANIM_SEL_FRAMES  (5)      // the selection moving
 +#define ANIM_SEL_US      (170000)
 +#define ANIM_OUT_FRAMES  (7)      // the rest of the menu leaving
@@ -1289,10 +1428,26 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +// duration on both.
 +static UINT64 TicksPerUs = 0;
 +
++// One counter that goes up, whatever the processor is. It does not matter what
++// it counts or how fast, because StartClock() below measures that against a
++// stall of known length -- but it does have to exist, and `rdtsc` with no guard
++// around it means this file cannot even be compiled for anything but x86.
 +static UINT64 ReadTicks(VOID) {
++#if defined(__x86_64__) || defined(__i386__)
 +    UINT32 Low, High;
 +    __asm__ __volatile__ ("rdtsc" : "=a" (Low), "=d" (High));
 +    return ((UINT64) High << 32) | (UINT64) Low;
++#elif defined(__aarch64__)
++    UINT64 Count;
++    __asm__ __volatile__ ("mrs %0, cntvct_el0" : "=r" (Count));
++    return Count;
++#else
++    // No counter to read. StartClock() will find TicksPerUs is 0, set it to 1,
++    // and every frame will look like it took no time -- so the animations run
++    // as fast as the machine draws them, which is what they did before any of
++    // this was written.
++    return 0;
++#endif
 +}
 +
 +static VOID StartClock(VOID) {
@@ -1354,33 +1509,61 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +}
 +
 +// Put From mixed with To on the screen, Alpha of 256 being all To.
-+static VOID BlendBlit(IN EG_IMAGE *From, IN EG_IMAGE *To, IN UINTN Alpha,
-+                      IN UINTN XPos, IN UINTN YPos) {
++// Mix To into a copy of From and put the result on the screen in one write.
++//
++// From may be taller than To. The extra rows are the ground a tile climbs over
++// on its way in: To sits Down rows below the top of From, so drawing the pair
++// together both moves the tile and repairs the photograph behind it, without
++// ever reading the screen back or writing any pixel twice.
++static VOID BlendBlitAt(IN EG_IMAGE *From, IN EG_IMAGE *To, IN UINTN Alpha,
++                        IN UINTN XPos, IN UINTN YPos, IN UINTN Down) {
 +    EG_IMAGE *Mix;
-+    UINTN     i, Count, Rev;
++    EG_PIXEL *Dest, *Src;
++    UINTN     x, y, Count, Rev;
 +
 +    if ((From == NULL) || (To == NULL))
 +        return;
-+    if (Alpha >= 256) { BltImage(To, XPos, YPos);   return; }
-+    if (Alpha == 0)   { BltImage(From, XPos, YPos); return; }
-+    if ((From->Width != To->Width) || (From->Height != To->Height))
++    if (From->Width != To->Width)
 +        return;
++    if ((Down + To->Height) > From->Height)
++        return;
++    if (Alpha > 256)
++        Alpha = 256;
++    if ((Alpha == 0) && (Down == 0)) { BltImage(From, XPos, YPos); return; }
++
 +    Mix = egCreateImage(From->Width, From->Height, FALSE);
 +    if (Mix == NULL)
 +        return;
 +    Count = Mix->Width * Mix->Height;
-+    Rev   = 256 - Alpha;
-+    for (i = 0; i < Count; i++) {
-+        Mix->PixelData[i].r = (UINT8) (((UINTN) From->PixelData[i].r * Rev +
-+                                        (UINTN) To->PixelData[i].r * Alpha) >> 8);
-+        Mix->PixelData[i].g = (UINT8) (((UINTN) From->PixelData[i].g * Rev +
-+                                        (UINTN) To->PixelData[i].g * Alpha) >> 8);
-+        Mix->PixelData[i].b = (UINT8) (((UINTN) From->PixelData[i].b * Rev +
-+                                        (UINTN) To->PixelData[i].b * Alpha) >> 8);
-+        Mix->PixelData[i].a = 0;
++    for (x = 0; x < Count; x++) {
++        Mix->PixelData[x]   = From->PixelData[x];
++        Mix->PixelData[x].a = 0;
++    }
++    if (Alpha > 0) {
++        Rev = 256 - Alpha;
++        for (y = 0; y < To->Height; y++) {
++            Dest = &Mix->PixelData[(y + Down) * Mix->Width];
++            Src  = &To->PixelData[y * To->Width];
++            for (x = 0; x < To->Width; x++) {
++                Dest[x].r = (UINT8) (((UINTN) Dest[x].r * Rev + (UINTN) Src[x].r * Alpha) >> 8);
++                Dest[x].g = (UINT8) (((UINTN) Dest[x].g * Rev + (UINTN) Src[x].g * Alpha) >> 8);
++                Dest[x].b = (UINT8) (((UINTN) Dest[x].b * Rev + (UINTN) Src[x].b * Alpha) >> 8);
++            }
++        }
 +    }
 +    BltImage(Mix, XPos, YPos);
 +    egFreeImage(Mix);
++}
++
++static VOID BlendBlit(IN EG_IMAGE *From, IN EG_IMAGE *To, IN UINTN Alpha,
++                      IN UINTN XPos, IN UINTN YPos) {
++    if ((From == NULL) || (To == NULL))
++        return;
++    if (Alpha >= 256) { BltImage(To, XPos, YPos);   return; }
++    if (Alpha == 0)   { BltImage(From, XPos, YPos); return; }
++    if (From->Height != To->Height)
++        return;
++    BlendBlitAt(From, To, Alpha, XPos, YPos, 0);
 +}
 +
 +// Frosting a tile is the expensive part of drawing one -- four box passes and
@@ -1522,10 +1705,16 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +static VOID AnimateMenuIn(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
 +                          IN UINTN *itemPosX, IN UINTN row0PosY, IN UINTN row1PosY) {
 +    EG_IMAGE *Tile[ANIM_MAX_TILES], *Back[ANIM_MAX_TILES];
-+    UINTN     X[ANIM_MAX_TILES], Y[ANIM_MAX_TILES];
-+    UINTN     Count = 0, f, i, Alpha, Start, Steps, Drawn = 0;
++    UINTN     X[ANIM_MAX_TILES], Y[ANIM_MAX_TILES], Lift[ANIM_MAX_TILES];
++    UINTN     Count = 0, f, i, Alpha, Start, Steps, Drawn = 0, Rise, Room, Down;
 +    UINT64    Began, Span;
 +    INTN      e;
++
++    // How far a tile climbs, in this screen's pixels rather than the 4K ones the
++    // number was chosen at.
++    Rise = (ANIM_IN_RISE * UGAHeight) / 2160;
++    if (Rise < 2)
++        Rise = 2;
 +
 +    for (e = State->FirstVisible; (e <= State->MaxIndex) && (Count < ANIM_MAX_TILES); e++) {
 +        if (Screen->Entries[e]->Row == 0) {
@@ -1539,12 +1728,20 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        }
 +        Tile[Count] = ComposeMenuEntry(Screen->Entries[e],
 +                                       (e == State->CurrentSelection), X[Count], Y[Count]);
++        if (Tile[Count] == NULL)
++            continue;
++        // The band of photograph the tile travels over. It cannot reach past the
++        // bottom of the background, and on a short screen there may be no room
++        // at all -- in which case that tile simply fades where it stands.
++        Room = (GlobalConfig.ScreenBackground != NULL &&
++                GlobalConfig.ScreenBackground->Height > (Y[Count] + Tile[Count]->Height))
++             ? GlobalConfig.ScreenBackground->Height - (Y[Count] + Tile[Count]->Height) : 0;
++        Lift[Count] = (Room < Rise) ? Room : Rise;
 +        Back[Count] = egCropImage(GlobalConfig.ScreenBackground, X[Count], Y[Count],
-+                                  (Tile[Count] != NULL) ? Tile[Count]->Width : 1,
-+                                  (Tile[Count] != NULL) ? Tile[Count]->Height : 1);
-+        if ((Tile[Count] == NULL) || (Back[Count] == NULL)) {
++                                  Tile[Count]->Width,
++                                  Tile[Count]->Height + Lift[Count]);
++        if (Back[Count] == NULL) {
 +            egFreeImage(Tile[Count]);
-+            egFreeImage(Back[Count]);
 +            continue;
 +        }
 +        Count++;
@@ -1562,7 +1759,11 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        for (i = 0; i < Count; i++) {
 +            Start = i;
 +            Alpha = (f > Start) ? EaseOut(f - Start, ANIM_IN_FRAMES) : 0;
-+            BlendBlit(Back[i], Tile[i], Alpha, X[i], Y[i]);
++            // The same eased number moves the tile and fades it: it arrives
++            // where it stops being transparent, which is what makes the two
++            // read as one gesture rather than two.
++            Down  = Lift[i] - ((Lift[i] * Alpha) >> 8);
++            BlendBlitAt(Back[i], Tile[i], Alpha, X[i], Y[i], Down);
 +        }
 +        Drawn++;
 +        if (!HoldFrame(FrameAt, ANIM_FRAME_US, TRUE))
@@ -1572,8 +1773,10 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        L"Menu entrance: %d tiles, %d frames, %d ms of a wanted %d, clock %d ticks/us",
 +        (INTN) Count, (INTN) Drawn, (INTN) ((NowUs() - Began) / 1000),
 +        (INTN) (Span / 1000), (INTN) TicksPerUs);
-+    for (i = 0; i < Count; i++)          // whatever the timing did, end whole
-+        BltImage(Tile[i], X[i], Y[i]);
++    // Whatever the timing did, end whole: the tile home, and the band it
++    // climbed over back to being photograph.
++    for (i = 0; i < Count; i++)
++        BlendBlitAt(Back[i], Tile[i], 256, X[i], Y[i], 0);
 +    for (i = 0; i < Count; i++) {
 +        egFreeImage(Tile[i]);
 +        egFreeImage(Back[i]);
@@ -1642,7 +1845,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1584,8 @@
+@@ -1150,10 +1655,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -1655,7 +1858,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1606,387 @@
+@@ -1174,6 +1677,416 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -1917,6 +2120,27 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        if (!HoldFrame(FrameAt, ANIM_FRAME_US, FALSE))
 +            break;
 +    }
++
++    // Land it.
++    //
++    // The loop stops when the time is up, and the last frame it drew was at
++    // whatever fraction of the way the clock had reached -- never at 256/256.
++    // So the tile came to rest a few pixels short of the middle, and the splash
++    // then drew its own tile at the middle on top: two tiles, slightly offset,
++    // one of them a ghost. On a slow machine, where only a handful of frames
++    // fit, "a few pixels" was most of the journey.
++    BoxX = (UINTN) ((INTN) DestX < PrevX ? (INTN) DestX : PrevX);
++    BoxY = (UINTN) ((INTN) DestY < PrevY ? (INTN) DestY : PrevY);
++    BoxW = (UINTN) (((INTN) DestX > PrevX ? (INTN) DestX : PrevX) + (INTN) Size) - BoxX;
++    BoxH = (UINTN) (((INTN) DestY > PrevY ? (INTN) DestY : PrevY) + (INTN) Size) - BoxY;
++    Box  = egCropImage(GlobalConfig.ScreenBackground, BoxX, BoxY, BoxW, BoxH);
++    Tile = ComposeTile(Icon, NULL, 0, TRUE, DestX, DestY);
++    if ((Box != NULL) && (Tile != NULL)) {
++        egComposeImage(Box, Tile, DestX - BoxX, DestY - BoxY);
++        BltImage(Box, BoxX, BoxY);
++    }
++    egFreeImage(Box);
++    egFreeImage(Tile);
 +} // VOID AnimateHandoff()
 +
 +// Show the chosen system on its own, the way the menu showed it, with a ring of
@@ -1928,8 +2152,16 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +    UINT64    Began;
 +    INTN      Theta, Angle, TileY, CentreY, GroupTop, GroupBottom, Shift;
 +
-+    if ((GlobalConfig.HandoffSplash == 0) || !AllowGraphicsMode ||
-+        (Icon == NULL) || (GlobalConfig.ScreenBackground == NULL))
++    // handoff_splash 0 means do not hold the splash up. It did not used to mean
++    // that: it meant leave the function, which took bgrt_logo with it, so a
++    // configuration that asked for the boot logo and no waiting got neither and
++    // was told nothing. The picture handed to the next system is the picture on
++    // the screen, so it still has to be drawn -- but only for the instant it
++    // takes to read it back, because the loop below runs while Elapsed is under
++    // HandoffSplash, and with nothing to wait for it does not run at all.
++    if ((GlobalConfig.HandoffSplash == 0) && !GlobalConfig.BgrtLogo)
++        return;
++    if (!AllowGraphicsMode || (Icon == NULL) || (GlobalConfig.ScreenBackground == NULL))
 +        return;
 +
 +    SwitchToGraphics();
@@ -2043,7 +2275,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +2000,7 @@
+@@ -1187,7 +2100,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -2052,7 +2284,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2273,7 @@
+@@ -1460,7 +2373,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -2061,7 +2293,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2351,7 @@
+@@ -1538,7 +2451,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -2070,7 +2302,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2453,7 @@
+@@ -1640,7 +2553,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -2079,7 +2311,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2491,7 @@
+@@ -1678,7 +2591,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2088,7 +2320,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2513,7 @@
+@@ -1700,7 +2613,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2097,7 +2329,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2602,7 @@
+@@ -1789,7 +2702,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -2106,7 +2338,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2627,7 @@
+@@ -1814,7 +2727,7 @@
      }
  
      if (AllowGraphicsMode) {
@@ -2444,8 +2676,8 @@ diff -urN a/refind/screen.h b/refind/screen.h
  //VOID BltImageComposite(IN EG_IMAGE *BaseImage, IN EG_IMAGE *TopImage, IN UINTN XPos, IN UINTN YPos);
 diff -urN a/refind/theme.c b/refind/theme.c
 --- a/refind/theme.c	1970-01-01 01:00:00.000000000 +0100
-+++ b/refind/theme.c	2026-08-31 16:02:47.048970696 +0200
-@@ -0,0 +1,1001 @@
++++ b/refind/theme.c	2026-09-01 20:53:05.983797744 +0200
+@@ -0,0 +1,1077 @@
 +/*
 + * refind/theme.c
 + * Choosing and applying the look, from inside the boot menu.
@@ -3179,6 +3411,12 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +
 +            MaxRows = (UGAHeight - 8 * RowH) / RowH;
 +            InitScroll(State, Screen->EntryCount, MaxRows);
++            // RunGenericMenu leaves SCROLL_STATE on the stack uninitialised and
++            // expects the style's INIT to fill it in; the other three styles all
++            // set this and this one did not, so which of two scrolling rules the
++            // settings screen followed depended on what happened to be on the
++            // stack. A panel of text rows scrolls like text.
++            State->ScrollMode = SCROLL_MODE_TEXT;
 +            // InitScroll works out how many things fit from the width of a menu
 +            // TILE, which is the right answer for the main menu and gives five
 +            // for a list of text: the sixth row of a six-row menu simply was not
@@ -3221,27 +3459,75 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +//
 +
 +// Every picture sitting in EFI\refind\backgrounds, whatever put it there.
-+static CHAR16 * ListBackgrounds(OUT UINTN *Count) {
++// Every photograph sitting in EFI/refind/backgrounds, as an array.
++//
++// It used to be one string with commas between the names, which is how rEFInd
++// keeps lists -- and it worked until somebody dropped in a file with a comma in
++// its name, at which point one photograph became two and the count no longer
++// matched the list. A directory can hold any name FAT allows; the code that
++// reads it should not care which.
++#define MAX_BACKGROUNDS (256)
++
++static CHAR16 ** ListBackgrounds(OUT UINTN *Count) {
 +    REFIT_DIR_ITER  Iter;
 +    EFI_FILE_INFO  *Entry;
-+    CHAR16         *List = NULL, *Ext;
++    CHAR16        **List, *Ext;
 +
 +    *Count = 0;
++    List = AllocateZeroPool(MAX_BACKGROUNDS * sizeof(CHAR16 *));
++    if (List == NULL)
++        return NULL;
 +    DirIterOpen(SelfDir, BACKGROUND_DIR, &Iter);
-+    while (DirIterNext(&Iter, 2, NULL, &Entry)) {
++    while (DirIterNext(&Iter, 2, NULL, &Entry) && (*Count < MAX_BACKGROUNDS)) {
 +        if (Entry->FileName[0] == L'.')
 +            continue;
 +        Ext = FindExtension(Entry->FileName);
 +        if (MyStriCmp(Ext, L".png") || MyStriCmp(Ext, L".jpg") ||
 +            MyStriCmp(Ext, L".jpeg") || MyStriCmp(Ext, L".bmp")) {
-+            MergeStrings(&List, Entry->FileName, L',');
-+            (*Count)++;
++            List[*Count] = StrDuplicate(Entry->FileName);
++            if (List[*Count] != NULL)
++                (*Count)++;
 +        }
 +        MyFreePool(Ext);
 +    }
 +    DirIterClose(&Iter);
 +    return List;
-+} // CHAR16 * ListBackgrounds()
++} // CHAR16 ** ListBackgrounds()
++
++static VOID FreeBackgrounds(IN CHAR16 **List, IN UINTN Count) {
++    UINTN i;
++
++    if (List == NULL)
++        return;
++    for (i = 0; i < Count; i++)
++        MyFreePool(List[i]);
++    MyFreePool(List);
++} // VOID FreeBackgrounds()
++
++// "My Photograph.jpg" -- with any quote in the name doubled, which is how
++// rEFInd's parser escapes one. Returns NULL only if there is nothing to quote.
++static CHAR16 * QuoteForConfig(IN CHAR16 *Name) {
++    CHAR16 *Out;
++    UINTN   In, i = 0, Quotes = 0;
++
++    if ((Name == NULL) || (Name[0] == L'\0'))
++        return NULL;
++    for (In = 0; Name[In] != L'\0'; In++)
++        if (Name[In] == L'"')
++            Quotes++;
++    Out = AllocatePool((In + Quotes + 3) * sizeof(CHAR16));
++    if (Out == NULL)
++        return NULL;
++    Out[i++] = L'"';
++    for (In = 0; Name[In] != L'\0'; In++) {
++        Out[i++] = Name[In];
++        if (Name[In] == L'"')
++            Out[i++] = L'"';
++    }
++    Out[i++] = L'"';
++    Out[i]   = L'\0';
++    return Out;
++} // CHAR16 * QuoteForConfig()
 +
 +// Write the choices where the next boot will find them. refind.conf ends with
 +// `include theme.conf`, so what is written here is read last and wins; and the
@@ -3250,7 +3536,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +static BOOLEAN SaveTheme(VOID) {
 +    EFI_FILE_PROTOCOL *File = NULL;
 +    EFI_STATUS         Status;
-+    CHAR16            *Body;
++    CHAR16            *Body, *Name;
 +    UINTN              Size;
 +
 +    // Delete first rather than truncate: writing a shorter file over a longer
@@ -3266,6 +3552,13 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +                                 EFI_FILE_MODE_CREATE, 0);
 +    if (EFI_ERROR(Status))
 +        return FALSE;
++    // The name goes in quotes. rEFInd's own tokeniser breaks a line on spaces,
++    // tabs, equals signs and commas, and a photograph copied on from a desktop
++    // is as likely as not to be called something with a space in it -- so an
++    // unquoted name meant the settings screen could save a choice that the next
++    // boot could not read back. A quote inside a name is written twice, which
++    // is how the same tokeniser escapes one.
++    Name = QuoteForConfig(GlobalConfig.BackgroundFile);
 +    Body = PoolPrint(L"\xFEFF# Written by the boot menu's own settings screen.\r\n"
 +                     L"# Delete this file to go back to what was installed.\r\n"
 +                     L"background %s\r\n"
@@ -3273,9 +3566,10 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +                     L"tint %d\r\n"
 +                     L"frost_radius %d\r\n"
 +                     L"animations %s\r\n",
-+                     GlobalConfig.BackgroundFile ? GlobalConfig.BackgroundFile : L"",
++                     Name ? Name : L"\"\"",
 +                     GlobalConfig.Darken, GlobalConfig.Tint, GlobalConfig.FrostRadius,
 +                     GlobalConfig.Animations ? L"true" : L"false");
++    MyFreePool(Name);
 +    if (Body == NULL) {
 +        refit_call1_wrapper(File->Close, File);
 +        return FALSE;
@@ -3287,22 +3581,20 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +    return !EFI_ERROR(Status);
 +} // BOOLEAN SaveTheme()
 +
-+static VOID NextBackground(IN CHAR16 *List, IN UINTN Count, IN INTN By) {
++static VOID NextBackground(IN CHAR16 **List, IN UINTN Count, IN INTN By) {
 +    CHAR16 *One;
-+    UINTN   i = 0;
++    UINTN   i;
 +    INTN    Current = -1, Wanted;
 +
 +    if ((List == NULL) || (Count == 0))
 +        return;
-+    while ((One = FindCommaDelimited(List, i)) != NULL) {
++    for (i = 0; i < Count; i++) {
 +        if ((GlobalConfig.BackgroundFile != NULL) &&
-+            MyStriCmp(One, GlobalConfig.BackgroundFile))
++            MyStriCmp(List[i], GlobalConfig.BackgroundFile))
 +            Current = (INTN) i;
-+        MyFreePool(One);
-+        i++;
 +    }
 +    Wanted = ((Current + By) % (INTN) Count + (INTN) Count) % (INTN) Count;
-+    One = FindCommaDelimited(List, (UINTN) Wanted);
++    One = StrDuplicate(List[Wanted]);
 +    if (One != NULL) {
 +        MyFreePool(GlobalConfig.BackgroundFile);
 +        GlobalConfig.BackgroundFile = One;
@@ -3328,12 +3620,19 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +
 +    if (!AllowGraphicsMode || (Screen->EntryCount == 0))
 +        return;
++    // INIT calls InitScroll(), which sets CurrentSelection back to 0 -- so the
++    // row to highlight has to be chosen after it, not before. Setting it first
++    // meant this panel, the one drawn immediately to answer the keypress, always
++    // highlighted the top row, and the row the user was actually on only
++    // appeared once the real menu came back a moment later.
 +    ZeroMem(&State, sizeof(State));
++    ThemeMenuStyle(Screen, &State, MENU_FUNCTION_INIT, NULL);
 +    State.MaxIndex         = (INTN) Screen->EntryCount - 1;
 +    State.CurrentSelection = (Selected > State.MaxIndex) ? State.MaxIndex : Selected;
-+    State.FirstVisible     = 0;
-+    State.LastVisible      = State.MaxIndex;
-+    ThemeMenuStyle(Screen, &State, MENU_FUNCTION_INIT, NULL);
++    if (State.CurrentSelection < 0)
++        State.CurrentSelection = 0;
++    if (State.CurrentSelection > State.LastVisible)
++        State.LastVisible = State.CurrentSelection;
 +    ThemeMenuStyle(Screen, &State, MENU_FUNCTION_PAINT_ALL, NULL);
 +} // VOID ShowPanelNow()
 +
@@ -3343,10 +3642,15 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +                                L"" };
 +    REFIT_MENU_ENTRY  *Rows[6], *Chosen;
 +    MENU_STYLE_FUNC    Style = AllowGraphicsMode ? ThemeMenuStyle : TextMenuStyle;
-+    CHAR16            *List;
++    CHAR16           **List;
 +    UINTN              Count, Exit, i;
 +    INTN               Default = 0;
-+    BOOLEAN            Running = TRUE, Saved = FALSE;
++    BOOLEAN            Running = TRUE;
++    // -1 not tried, 0 tried and failed, 1 written. A settings screen that says
++    // nothing when the write fails is a settings screen that quietly loses the
++    // afternoon's choices: the EFI partition can be full, or mounted by
++    // something else, or simply refuse.
++    INTN               Saved = -1;
 +    BOOLEAN            Pending = FALSE, NeedTheme = FALSE, NewPhoto = FALSE;
 +
 +    List = ListBackgrounds(&Count);
@@ -3387,8 +3691,12 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +        Rows[4]->Title = PoolPrint(L"Animations           %s",
 +                                   GlobalConfig.Animations ? L"on" : L"off");
 +        Rows[5] = AllocateZeroPool(sizeof(REFIT_MENU_ENTRY));
-+        Rows[5]->Title = StrDuplicate(Saved ? L"Saved. Press Esc to return"
-+                                            : L"Save these for next time");
++        if (Saved == 1)
++            Rows[5]->Title = StrDuplicate(L"Saved. Press Esc to return");
++        else if (Saved == 0)
++            Rows[5]->Title = StrDuplicate(L"Could not write theme.conf -- is the EFI partition full?");
++        else
++            Rows[5]->Title = StrDuplicate(L"Save these for next time");
 +        for (i = 0; i < 6; i++) {
 +            Rows[i]->Tag = TAG_RETURN;
 +            AddMenuEntry(&Menu, Rows[i]);
@@ -3411,7 +3719,7 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +            Running = FALSE;
 +            continue;
 +        }
-+        Saved = FALSE;
++        Saved = -1;
 +        Pending = TRUE;
 +        NeedTheme = TRUE;
 +        if (Chosen == Rows[0]) {
@@ -3431,12 +3739,12 @@ diff -urN a/refind/theme.c b/refind/theme.c
 +            GlobalConfig.Animations = !GlobalConfig.Animations;
 +            NeedTheme = FALSE;               // nothing on the screen depends on it
 +        } else if (Chosen == Rows[5]) {
-+            Saved = SaveTheme();
++            Saved = SaveTheme() ? 1 : 0;
 +            NeedTheme = FALSE;               // the file changed, not the picture
 +        }
 +    } // while
 +
-+    MyFreePool(List);
++    FreeBackgrounds(List, Count);
 +    for (i = 0; i < Menu.EntryCount; i++) {
 +        MyFreePool(Menu.Entries[i]->Title);
 +        MyFreePool(Menu.Entries[i]);

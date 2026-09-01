@@ -11,7 +11,7 @@ that is why the boot menu needed a patched bootloader. Here the background never
 moves and neither does the panel, so the frost is composited once, into the
 image, and costs nothing at boot: 85 ms to decode 3840x2160, once.
 
-    ./build.py && ./plymouth.py && sudo ./install-plymouth.sh
+    ./build.py && ./plymouth.py && sudo ./setup.sh
 """
 import argparse, math, os, re, shutil, sys
 from PIL import Image, ImageDraw
@@ -34,8 +34,8 @@ STAGGER = 0.100        # fraction of a period between one dot and the next
 SWING   = 0.55         # 0 = constant speed, 1 = a full stop at the top
 # Those four are not free. The dots span 2*pi * g'(p) * (NDOTS-1) * STAGGER of
 # the circle, and g'(p) runs between 1-SWING and 1+SWING, so the arc closes to
-# 81 degrees and opens to 279. At its tightest that is 156px of arc holding
-# 120px of dots: they gather without ever colliding, which is the whole trick.
+# 81 degrees and opens to 279. At its tightest that is 99px of arc holding 78px
+# of dots: they gather without ever colliding, which is the whole trick.
 
 
 def which_os():
@@ -159,67 +159,63 @@ DOT     = {DOT}.0 / {H}.0;
 CX      = 0.5;                   # the panel is centred
 CY      = {CY}.0 / {H}.0;
 REFRESH = 50.0;                  # Plymouth calls the refresh function 50x a second
-FONT    = "Ubuntu 24";
 
 background = Image("background.png");
 dot_image  = Image("dot.png");
 
-# Which screens are attached.
+# How Plymouth actually lays out more than one screen.
 #
-# Window.GetWidth(i) takes a monitor index, but a build where the index is
-# ignored would answer for the same screen four times over and we would stack
-# four full-size backgrounds on top of each other. So accept a screen only if
-# its geometry differs from every screen already accepted: either way this ends
-# up with each distinct display exactly once.
-monitors = 0;
-for (i = 0; i < 4; i++) {{
-    w = Window.GetWidth(i);
-    if (w > 0) {{
-        x = Window.GetX(i);
-        y = Window.GetY(i);
-        seen = 0;
-        for (j = 0; j < monitors; j++) {{
-            if (screen[j].x == x) {{
-                if (screen[j].y == y) {{
-                    if (screen[j].w == w) {{
-                        seen = 1;
-                    }}
-                }}
-            }}
-        }}
-        if (seen == 0) {{
-            screen[monitors].x = x;
-            screen[monitors].y = y;
-            screen[monitors].w = w;
-            screen[monitors].h = Window.GetHeight(i);
-            monitors++;
-        }}
-    }}
-}}
-if (monitors < 1) {{
-    monitors = 1;
-    screen[0].x = 0;
-    screen[0].y = 0;
-    screen[0].w = Window.GetWidth();
-    screen[0].h = Window.GetHeight();
+# It is not a desktop. script-lib-sprite.c takes the largest display, calls that
+# the canvas, and centres every other display on it -- display->x is
+# (max_width - this_width) / 2. Then it draws *every* sprite on *every* display,
+# offset by that display's origin.
+#
+# So a theme that makes one background per monitor and places each at its own
+# origin does not get one background per monitor. It gets all of them on all of
+# them, overlapping: on a 4K screen beside a 1080p one, the 1080p background
+# lands in the middle of the 4K one and the 4K background covers the 1080p
+# screen offset by 960 pixels. The way to draw on two screens here is to stop
+# trying to, and draw once on the canvas they are both windows onto. Everything
+# in this theme is centred, so the smaller screen sees the middle of it, which
+# is the tile, the name and the ring.
+W = Window.GetWidth();
+H = Window.GetHeight();
+if (W < 1) {{
+    W = 1024;
+    H = 768;
 }}
 
-for (m = 0; m < monitors; m++) {{
-    if (background != NULL) {{
-        screen[m].bg = Sprite(background.Scale(screen[m].w, screen[m].h));
-        screen[m].bg.SetPosition(screen[m].x, screen[m].y, -100);
+if (background != NULL) {{
+    # Only resample if the picture is not already the size of the canvas.
+    # Plymouth's resize is a 2x2 tap over 8.3 million pixels, single threaded,
+    # in the initramfs: worth not doing for a picture that is already right. It
+    # usually is -- the theme is built for this screen.
+    picture = background;
+    if (background.GetWidth() != W) {{
+        picture = background.Scale(W, H);
+    }} else {{
+        if (background.GetHeight() != H) {{
+            picture = background.Scale(W, H);
+        }}
     }}
-    size = Math.Int(DOT * screen[m].h);
-    if (size < 3) {{
-        size = 3;
-    }}
-    screen[m].size = size;
-    screen[m].r  = RING * screen[m].h;
-    screen[m].cx = screen[m].x + CX * screen[m].w;
-    screen[m].cy = screen[m].y + CY * screen[m].h;
-    for (d = 0; d < NDOTS; d++) {{
-        screen[m].dot[d] = Sprite(dot_image.Scale(size, size));
-    }}
+    wallpaper = Sprite(picture);
+    wallpaper.SetPosition(0, 0, -100);
+}}
+
+# The size of a point of type is the one measurement in this theme that is not a
+# fraction of the screen, so it is the one that has to be worked out. 24 point is
+# right on a 1080-line screen; on a 4K screen it is half of what it should be.
+FONT = "Ubuntu " + Math.Int(24 * H / 1080.0);
+
+dot_size = Math.Int(DOT * H);
+if (dot_size < 3) {{
+    dot_size = 3;
+}}
+ring_r = RING * H;
+ring_x = CX * W;
+ring_y = CY * H;
+for (d = 0; d < NDOTS; d++) {{
+    dots[d] = Sprite(dot_image.Scale(dot_size, dot_size));
 }}
 
 # Anything not covered by a screen -- letterboxing, a monitor plugged in later --
@@ -231,20 +227,17 @@ frame = 0;
 fun refresh_callback() {{
     frame++;
     t = frame / REFRESH;
-    for (m = 0; m < monitors; m++) {{
-        for (d = 0; d < NDOTS; d++) {{
-            p = t / PERIOD - d * STAGGER;
-            p = p - Math.Int(p);
-            if (p < 0) {{
-                p = p + 1;
-            }}
-            g = p - SWING * Math.Sin(2 * Math.Pi * p) / (2 * Math.Pi);
-            a = 2 * Math.Pi * g - Math.Pi / 2;
-            screen[m].dot[d].SetPosition(
-                screen[m].cx + screen[m].r * Math.Cos(a) - screen[m].size / 2,
-                screen[m].cy + screen[m].r * Math.Sin(a) - screen[m].size / 2, 100);
-            screen[m].dot[d].SetOpacity(1);
+    for (d = 0; d < NDOTS; d++) {{
+        p = t / PERIOD - d * STAGGER;
+        p = p - Math.Int(p);
+        if (p < 0) {{
+            p = p + 1;
         }}
+        g = p - SWING * Math.Sin(2 * Math.Pi * p) / (2 * Math.Pi);
+        a = 2 * Math.Pi * g - Math.Pi / 2;
+        dots[d].SetPosition(ring_x + ring_r * Math.Cos(a) - dot_size / 2,
+                            ring_y + ring_r * Math.Sin(a) - dot_size / 2, 100);
+        dots[d].SetOpacity(1);
     }}
 }}
 
@@ -262,8 +255,8 @@ fun centre(sprite, image, fraction) {{
         return;
     }}
     sprite.SetImage(image);
-    sprite.SetPosition(screen[0].x + (screen[0].w - image.GetWidth()) / 2,
-                       screen[0].y + fraction * screen[0].h - image.GetHeight() / 2, 200);
+    sprite.SetPosition((W - image.GetWidth()) / 2,
+                       fraction * H - image.GetHeight() / 2, 200);
     sprite.SetOpacity(1);
 }}
 
@@ -293,13 +286,11 @@ fun display_normal_callback() {{
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
 
 fun quit_callback() {{
-    for (m = 0; m < monitors; m++) {{
-        if (background != NULL) {{
-            screen[m].bg.SetOpacity(0);
-        }}
-        for (d = 0; d < NDOTS; d++) {{
-            screen[m].dot[d].SetOpacity(0);
-        }}
+    if (background != NULL) {{
+        wallpaper.SetOpacity(0);
+    }}
+    for (d = 0; d < NDOTS; d++) {{
+        dots[d].SetOpacity(0);
     }}
     message_sprite.SetOpacity(0);
     prompt_sprite.SetOpacity(0);

@@ -16,7 +16,7 @@ for five, and for whatever a USB stick adds tomorrow.
     ./build.py --background ~/mine.png --darken auto
 """
 import argparse, colorsys, glob, json, math, os, sys
-from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageFilter, ImageEnhance, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageFilter, ImageEnhance, ImageOps, ImageStat
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -59,6 +59,15 @@ NAME_Y    = PLATE_Y + PLATE + 22
 ICON_OFF  = (TILE - BIG) // 2     # icon is centred in the tile
 PLATE_X   = (BIG - PLATE) // 2
 
+# Pillow refuses to decode anything past about 89 megapixels, on the theory that
+# a file claiming to be enormous is probably an attack. Here the file is one the
+# person running this chose off their own disk, and a 100-megapixel panorama is
+# a photograph, not an attack -- so the ceiling is raised, once, deliberately,
+# rather than left to fail with a traceback about decompression bombs. It is
+# still a ceiling: half a gigapixel would exhaust the machine.
+Image.MAX_IMAGE_PIXELS = 512_000_000
+
+
 def _font(*names):
     """Find a font file by name, wherever this distribution keeps its fonts.
 
@@ -74,15 +83,31 @@ def _font(*names):
         for root in roots:
             for path in glob.glob(os.path.join(root, "**", name), recursive=True):
                 return path
+    # fc-match never says no. Ask it for a font that is not installed and it
+    # hands back whatever it thinks is closest, which on a minimal system can be
+    # a CJK face -- and then every label in the boot menu is drawn in it without
+    # a word of complaint. So check that what came back is actually the family
+    # that was asked for.
     for name in names:
+        want = os.path.splitext(name)[0]
+        family = want.replace("DejaVu", "DejaVu ").split("-")[0].strip()
         try:
-            out = subprocess.run(["fc-match", "-f", "%{file}", os.path.splitext(name)[0]],
+            out = subprocess.run(["fc-match", "-f", "%{file}\t%{family}", want],
                                  capture_output=True, text=True, timeout=5)
-            if out.returncode == 0 and os.path.exists(out.stdout.strip()):
-                return out.stdout.strip()
         except (OSError, subprocess.SubprocessError):
-            pass
-    raise SystemExit("no DejaVu font found: install fonts-dejavu (or dejavu-sans-fonts)")
+            continue
+        if out.returncode != 0 or "\t" not in out.stdout:
+            continue
+        path, _, got = out.stdout.partition("\t")
+        if os.path.exists(path.strip()) and "dejavu" in got.strip().lower():
+            return path.strip()
+    raise SystemExit(
+        "no DejaVu font found. Install it:\n"
+        "  Debian/Ubuntu   sudo apt install fonts-dejavu-core\n"
+        "  Fedora/RHEL     sudo dnf install dejavu-sans-fonts dejavu-sans-mono-fonts\n"
+        "  Arch            sudo pacman -S ttf-dejavu\n"
+        "  openSUSE        sudo zypper install dejavu-fonts\n"
+        "  Alpine          sudo apk add font-dejavu")
 
 
 FONT_MONO = _font("DejaVuSansMono.ttf")
@@ -286,12 +311,18 @@ def shades(im, strength=1.0):
     """What the theme is drawn in. The flat colours are the neutrals, because the
     artwork on disk is neutral and rEFInd colours it at boot; the ramp is what
     does the colouring, and it is computed the same way there and here."""
+    # A ramp of None means "this photograph has no colour worth taking" -- a
+    # black-and-white picture, or a moonlit one. duotone() understands that and
+    # leaves the logo alone. What it must never do is leave the key out
+    # altogether: three callers index it directly, and a greyscale photograph
+    # used to end the build with a KeyError.
+    out = dict(NEUTRAL)
+    out["ramp"] = None
     if strength <= 0:
-        return dict(NEUTRAL)
+        return out
     direction, chroma = accent(im)
     if chroma < 6:
-        return dict(NEUTRAL)
-    out = dict(NEUTRAL)
+        return out
     out["ramp"] = ramp(direction, chroma)
     return out
 
@@ -453,7 +484,12 @@ def make_icon(plate_img, name, drawer=None, stock=None, tone=None, label=(255, 2
 # ------------------------------------------------------------------ picture
 def fit(path):
     """Centre-crop to 16:9 and scale to exactly 3840x2160."""
-    im = Image.open(path).convert("RGB"); w, h = im.size
+    im = Image.open(path)
+    # A photograph off a phone or a camera is stored in the sensor's orientation
+    # with a tag saying which way up it goes. Ignoring the tag installs a
+    # wallpaper on its side, and the person who took it will not know why.
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    w, h = im.size
     if w / h > W / H:
         nw = int(h * W / H); im = im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
     else:
@@ -604,12 +640,26 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
 
 def read_tint(assets):
     """What rEFInd will use, read from the file rEFInd reads."""
+    # The boot menu writes UTF-16 with a byte-order mark, because that is what a
+    # UEFI program writes. A person editing the file from a text editor writes
+    # UTF-8. Both have to be readable, or changing one line by hand silently
+    # resets the colour.
     try:
-        for line in open(f"{assets}/theme.conf", encoding="utf-16"):
+        raw = open(f"{assets}/theme.conf", "rb").read()
+    except OSError:
+        return 100
+    for encoding in ("utf-16", "utf-8-sig", "utf-8"):
+        try:
+            text = raw.decode(encoding)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+        for line in text.replace("\r", "\n").split("\n"):
             if line.strip().startswith("tint"):
-                return int(line.split()[1])
-    except (OSError, ValueError, IndexError):
-        pass
+                try:
+                    return int(line.split()[1])
+                except (ValueError, IndexError):
+                    return 100
+        return 100
     return 100
 
 

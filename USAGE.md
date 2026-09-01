@@ -25,8 +25,10 @@ every other sub-menu — about, hidden tags, boot options.
 Every change takes effect the moment you make it — press Esc and the menu is
 already wearing it. Only *Save* makes it survive a reboot.
 
-`theme.conf` is read last by `refind.conf`, so it overrides everything;
-**deleting it brings the machine back to exactly what was installed.**
+`theme.conf` is read last by `refind.conf`, so it overrides everything, and
+**deleting it brings the menu back to the defaults in `refind.conf`** — which is
+where it started, unless you have edited that too. What deleting it does *not*
+do is put back a photograph you have since removed from `backgrounds/`.
 
 ## Adding a photograph of your own
 
@@ -54,12 +56,13 @@ photograph at boot. So these regenerate shapes, not palettes.
 ./build.py                                   # redraw everything
 ./build.py --background ~/Pictures/mine.jpg  # preview against a photo of yours
 ./build.py --tint 0                          # preview with the original colours
-sudo ./install-assets.sh assets              # copy to the EFI partition
+sudo ./setup.sh                              # copy it all to the EFI partition
 ```
 
-`install-assets.sh` also copies the library into `EFI/refind/backgrounds`, and
-writes a starting `theme.conf` — but only if there is not one there already, so
-choices made from the boot menu are never overwritten by a reinstall.
+`setup.sh` is safe to run again: it copies the artwork and the library into the
+directory it owns on the EFI partition, and writes a starting `theme.conf` only
+if there is not one there already, so choices made from the boot menu are never
+overwritten by a reinstall.
 
 ---
 
@@ -79,7 +82,7 @@ want to change which logo a system gets.
 ## Before adding a photograph
 
 ```bash
-./check-photos.py '~/Pictures/*.jpg'
+./check-photos.py '~/Pictures/*.jpg'      # needs numpy as well as Pillow
 ```
 
 Four thousand pixels across is not the same as four thousand pixels of picture.
@@ -120,9 +123,9 @@ Needs `qemu-system-x86` and `ovmf`.
 
 ### The splash follows the menu
 
-`sudo ./install-plymouth.sh` installs two things: the splash itself, built from
-whatever photograph the boot menu is showing *now* and at the resolution this
-screen actually boots at, and a service that keeps it that way.
+`sudo ./setup.sh` installs two things: the splash itself, built from whatever
+photograph the boot menu is showing *now* and at the resolution this screen
+actually boots at, and a service that keeps it that way.
 
 The menu can change its photograph at any time, from its own settings screen,
 with no operating system running — and the splash lives in an initramfs built
@@ -136,23 +139,31 @@ Run `sudo refind-splash-sync` yourself to have it now rather than next time, and
 `--force` to rebuild regardless.
 
 **On another system.** Nothing here assumes Debian. The initramfs is rebuilt with
-whichever of initramfs-tools and dracut is present, the theme is selected through
-`update-alternatives` or `plymouth-set-default-theme`, and the fonts are looked
-for rather than assumed. Install a second system tomorrow, run the same script
+whichever of initramfs-tools, dracut and mkinitcpio is present, the theme is
+selected through `update-alternatives` or `plymouth-set-default-theme`, and the
+fonts are looked for rather than assumed. (On mkinitcpio the `plymouth` hook has
+to be in `HOOKS` for any theme to be included at all; the installer checks and
+tells you, rather than editing a file it does not own.) Install a second system tomorrow, run the same script
 inside it, and it gets the same splash carrying *its* logo and *its* name, over
 the same photograph — because the logo and name come from that system's
 `os-release` and the photograph comes from the EFI partition both of them share.
 
 The boot menu's own splash needs none of this: it already shows the right icon,
 name and ring for anything it can boot, including a system installed next year,
-because it draws them itself. What `install-plymouth.sh` buys is the seconds
+because it draws them itself. What the splash buys is the seconds
 *after* the handover, which belong to the system being booted and can only be
 arranged from inside it.
 
-`sudo ./install-plymouth.sh` replaces Ubuntu's spinner with the boot menu
-carried on: the same photograph, the same frosted tile holding the logo and the
-name of this system, and a ring of dots turning underneath. Rebuild it after
-changing the background with `./build.py && ./plymouth.py`, then install again.
+It replaces the distribution's own spinner with the boot menu carried on: the
+same photograph, the same frosted tile holding the logo and the name of this
+system, and a ring of dots turning underneath.
+
+It also sets `DeviceScale=1` in `/etc/plymouth/plymouthd.conf`, keeping a copy of
+the file first. Plymouth halves any screen of 2880 lines or more before a theme
+sees it, on the assumption that the theme has HiDPI artwork to offer — and the
+script plugin, which this theme uses, has no notion of device scale at all, so
+there is no way for a theme to answer. Left alone, a 4K splash is built at 4K,
+handed to Plymouth as 1920x1080, and blown back up: sharp file, soft screen.
 
 The theme reads `/etc/os-release` to choose its icon, so it labels itself
 correctly on whatever it is built on. `--os <stem>` overrides that.
@@ -175,7 +186,7 @@ size of the frosted plate baked into every icon. If you change them, run
 `./build.py` so the icons, the selection highlight and the glass stencil are
 redrawn to match.
 
-The picker's **Match colours to the photo** switch draws the logos, the names,
+The picker's **Colour from photo** switch draws the logos, the names,
 the glass, the tool glyphs and the spinner in a hue read out of the photograph
 itself, worked out from the picture rather than looked up, so a photo of your own
 gets its own palette. Turning it off puts Windows back to blue and Ubuntu back to
@@ -229,9 +240,13 @@ wallpaper before the menu lands on it. A keypress ends the wait immediately.
 `handoff_splash` (1800) is how many milliseconds the chosen system is shown on
 its own before rEFInd hands over — the boot logo of everything this machine
 boots, since rEFInd is the only thing that runs before all of them. 1800 is one
-full turn of the ring; 0 switches it off and hands over immediately.
+full turn of the ring; 0 switches it off and hands over immediately. It is
+worth knowing what 0 does when `bgrt_logo` is also on: the picture handed to the
+next system is the picture on the screen, so the splash is still drawn — for the
+instant it takes to read it back, with no ring and no waiting. Set `bgrt_logo
+false` as well for a menu that draws nothing on the way out.
 
-`frost_radius` (32) is how far the glass scatters what is behind it; 0 switches
+`frost_radius` (14) is how far the glass scatters what is behind it; 0 switches
 the effect off and the plates go back to plain translucency. `frost_mask_big`
 names the stencil that says where the glass is — `build.py` writes it as
 `frost_big.png` from the same `PLATE` geometry it draws the panels with, so the
