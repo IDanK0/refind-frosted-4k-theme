@@ -740,7 +740,13 @@ def preview(assets, dst, icons, label, scale=None, tint=None):
     n = len(icons)
     r0x = (W + XSP - (TILE + XSP) * n) // 2
     r1y = R0Y + TILE + YSP
-    r1x = (W + XSP - (TILE1 + XSP) * 5) // 2
+    # Centre the tool row on however many tools there are, not on five. It was
+    # written as five when there were five; the settings icon made it six and
+    # this was not changed, so every screenshot since has had the row sitting
+    # 36 px right of centre at 3840x2160. rEFInd's own layout counts the tools
+    # it is about to draw, which is why the boot menu was right the whole time
+    # and only the pictures of it were wrong.
+    r1x = (W + XSP - (TILE1 + XSP) * len(TOOLS)) // 2
     txty = r1y + TILE1 + YSP
     c = Image.open(f"{assets}/background.png").convert("RGBA")
     if tint is None:
