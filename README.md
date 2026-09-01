@@ -1,8 +1,13 @@
-# refind-frosted
+# refind-frosted-4k-theme
 
-A boot menu for [rEFInd](https://www.rodsbooks.com/refind/), drawn at 3840×2160
-and rendered at whatever your screen turns out to be. Frosted glass, one
+A boot menu for [rEFInd](https://www.rodsbooks.com/refind/) built for 3840×2160,
+because that is where the alternatives fall apart: GRUB's software renderer
+repaints 8.3 million pixels for every keystroke and drops half of them, so one
+press of the arrow key moves the selection two entries. Frosted glass, one
 photograph, and every system on the machine picked up by itself.
+
+**The 4K is the point, not a requirement.** Every measurement is a fraction of
+screen height, so a 1080p laptop gets a 1080p theme and not a shrunken 4K one.
 
 ![The boot menu](screenshots/menu.png)
 
@@ -15,7 +20,7 @@ rEFInd finds them and each one gets its own logo and the same glass.
 ## Install
 
 ```bash
-git clone https://github.com/IDanK0/refind-frosted && cd refind-frosted
+git clone https://github.com/IDanK0/refind-frosted-4k-theme && cd refind-frosted-4k-theme
 sudo ./setup.sh
 ```
 
@@ -210,7 +215,7 @@ everything by hand.
 **5. It installs the boot menu.** Builds rEFInd 0.14.2 with the patch, after
 checking the downloaded tarball against a recorded SHA-256, renders the artwork
 at your screen's resolution, and writes it into a directory of its own. Anything
-already at a path it writes is kept as `*.before-refind-frosted`.
+already at a path it writes is kept as `*.before-refind-frosted-4k-theme`.
 
 **6. It asks the firmware for a new entry and tries it once.** `BootNext`, not
 the boot order. The next boot goes to the new menu; the one after that boots the
@@ -235,7 +240,7 @@ sudo ./setup.sh --status          # what is installed
 sudo ./setup.sh --uninstall       # put everything back
 ```
 
-Every write is recorded in `/var/lib/refind-frosted/journal` before it happens
+Every write is recorded in `/var/lib/refind-frosted-4k-theme/journal` before it happens
 and flushed to disk, so `--uninstall` works even if the installer was killed
 halfway through. It replays that journal backwards: files it wrote are removed,
 files it replaced are restored, the firmware entry is deleted, the boot order

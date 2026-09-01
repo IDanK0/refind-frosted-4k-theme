@@ -22,7 +22,7 @@ from build import (apply_frost, duotone, shades, read_tint, W, H, TILE, TILE1,
                    XSP, YSP, ICON_OFF, PLATE_X, PLATE_Y, PLATE, BIG, R0Y,
                    FROST, SS, DOT_PX)
 
-NAME    = "refind-frosted"
+NAME    = "refind-frosted-4k-theme"
 NDOTS   = 6            # Windows uses five; six closes the ring more evenly
 DOT     = DOT_PX       # one dot, at 3840x2160; build.py draws it
 RING    = 70           # radius of the circle the dots travel

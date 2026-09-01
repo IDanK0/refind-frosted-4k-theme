@@ -1,6 +1,6 @@
 [Unit]
 Description=Follow the boot menu's photograph into the splash
-Documentation=https://github.com/IDanK0/refind-frosted
+Documentation=https://github.com/IDanK0/refind-frosted-4k-theme
 # The EFI partition has to be mounted to be read. local-fs.target is not enough
 # on its own: a partition mounted nofail, or through an automount, or by
 # systemd-gpt-auto-generator rather than fstab, is not ordered before it. Naming
@@ -21,7 +21,7 @@ IOSchedulingClass=idle
 # to whatever is running. That is not a signal to send to a program that is
 # writing the file the machine boots from.
 TimeoutStartSec=900
-ExecStart=/usr/local/bin/refind-splash-sync
+ExecStart=/usr/local/bin/refind-frosted-4k-theme-splash-sync
 # A machine with no rEFInd, no photograph chosen yet, or no way to rebuild an
 # initramfs is not a broken machine; it just has nothing to do here.
 SuccessExitStatus=0 1

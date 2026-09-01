@@ -27,7 +27,7 @@ of the menu.
 import argparse, glob, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE  = os.path.dirname(os.path.abspath(__file__))
-NAME  = "refind-frosted"
+NAME  = "refind-frosted-4k-theme"
 THEME = f"/usr/share/plymouth/themes/{NAME}"
 STAMP = os.path.join(THEME, "built-from.json")
 CONF  = "/etc/plymouth/plymouthd.conf"
@@ -37,7 +37,7 @@ MARK  = f"# {NAME}: draw the splash at the screen's real resolution."
 def esp_dir():
     """Where the boot menu lives, if it lives anywhere.
 
-    setup.sh installs into a directory of its own -- EFI/refind-frosted -- and
+    setup.sh installs into a directory of its own -- EFI/refind-frosted-4k-theme -- and
     only uses EFI/refind when a build of this was already there. Looking only in
     EFI/refind meant that on a machine installed the ordinary way this found
     nothing, said there was nothing to follow, and the splash never followed the
@@ -47,7 +47,7 @@ def esp_dir():
     empty EFI/refind left behind by something else is not mistaken for ours.
     """
     for root in ("/boot/efi", "/efi", "/boot"):
-        for name in ("refind-frosted", "refind"):
+        for name in ("refind-frosted-4k-theme", "refind"):
             d = os.path.join(root, "EFI", name)
             if os.path.isfile(os.path.join(d, "theme.conf")) or \
                os.path.isfile(os.path.join(d, "refind.conf")):
@@ -428,8 +428,8 @@ def only_one():
     reason to refuse to run, only a reason not to promise anything.
     """
     import errno, fcntl, tempfile
-    for path in ("/run/refind-splash-sync.lock",
-                 os.path.join(tempfile.gettempdir(), "refind-splash-sync.lock")):
+    for path in ("/run/refind-frosted-4k-theme-splash-sync.lock",
+                 os.path.join(tempfile.gettempdir(), "refind-frosted-4k-theme-splash-sync.lock")):
         try:
             fh = open(path, "w")
         except OSError:

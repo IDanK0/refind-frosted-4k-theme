@@ -1,6 +1,6 @@
 # What this project is made of, and under what terms
 
-`refind-frosted` is published under the **GNU General Public License, version 3**
+`refind-frosted-4k-theme` is published under the **GNU General Public License, version 3**
 (`LICENSE`). It has to be: the boot menu is rEFInd with a patch applied, and
 rEFInd is GPLv3. The generators, the installers and the Plymouth theme are
 released under the same licence so that the whole thing is one work with one

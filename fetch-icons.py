@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEST = os.path.join(HERE, "stock-icons")
 SIZE = 512
 API  = "https://commons.wikimedia.org/w/api.php"
-UA   = "refind-frosted/1.0 (boot theme icon fetch)"
+UA   = "refind-frosted-4k-theme/1.0 (boot theme icon fetch)"
 
 # Sources on Commons, each looked at before being written down here.
 COMMONS = {
