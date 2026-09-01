@@ -17,7 +17,7 @@ Pick **Settings** in the tool row.
 | **Frosted glass** | 0–32, how far the glass scatters what is behind it |
 | **Colour from photo** | 0–100%, how far the logos and labels move towards the picture's own colour |
 | **Animations** | on or off |
-| **Save these for next time** | writes `EFI/refind/theme.conf` |
+| **Save these for next time** | writes `theme.conf` beside the menu on the EFI partition |
 
 The panel is drawn as a pane of the same glass the tiles are made of, and so is
 every other sub-menu — about, hidden tags, boot options.
@@ -162,8 +162,9 @@ same photograph, the same frosted tile holding the logo and the name of this
 system, and a ring of dots turning underneath.
 
 It also sets `DeviceScale=1` in `/etc/plymouth/plymouthd.conf`, keeping a copy of
-the file first. Plymouth halves any screen of 2880 lines or more before a theme
-sees it, on the assumption that the theme has HiDPI artwork to offer — and the
+the file first. Plymouth halves any screen at least 2880 across and 1620
+down before a theme sees it, on the assumption that the theme has HiDPI artwork
+to offer — and the
 script plugin, which this theme uses, has no notion of device scale at all, so
 there is no way for a theme to answer. Left alone, a 4K splash is built at 4K,
 handed to Plymouth as 1920x1080, and blown back up: sharp file, soft screen.
@@ -200,8 +201,8 @@ chosen tile travel to the middle instead of jumping. All of it stops the moment 
 keystroke is waiting, so holding an arrow key is as fast as it ever was; `false`
 turns it off.
 
-`log_level` (0) turns on rEFInd's log, written to `EFI\refind\refind.log` on
-the EFI partition. At 1 it also records how long each step took after the key
+`log_level` (0) turns on rEFInd's log, written to `refind.log` beside the menu
+on the EFI partition. At 1 it also records how long each step took after the key
 that asked for it — the screen painted, the photograph decoded, the handoff
 ready to draw — which is how to find out where a machine that feels slow is
 actually spending its time, rather than guessing at it. It costs a file write
@@ -243,8 +244,11 @@ wallpaper before the menu lands on it. A keypress ends the wait immediately.
 `handoff_splash` (1800) is how many milliseconds the chosen system is shown on
 its own before rEFInd hands over — the boot logo of everything this machine
 boots, since rEFInd is the only thing that runs before all of them. 1800 is one
-full turn of the ring; 0 switches it off and hands over immediately. It is
-worth knowing what 0 does when `bgrt_logo` is also on: the picture handed to the
+full turn of the ring; 0 switches off the waiting. It does not make the handover
+instant: the rest of the menu still fades out and the chosen tile still travels
+to the middle, which is about three quarters of a second of `animations`, and
+`animations false` is the switch for that. What 0 removes is the pause with the
+ring turning. It is also worth knowing what it does when `bgrt_logo` is on: the picture handed to the
 next system is the picture on the screen, so the splash is still drawn — for the
 instant it takes to read it back, with no ring and no waiting. Set `bgrt_logo
 false` as well for a menu that draws nothing on the way out.

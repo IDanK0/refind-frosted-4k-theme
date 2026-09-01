@@ -51,10 +51,9 @@ SWEEP_AT, SWEEP_W = 0.34, 0.22    # where it falls, and how broad it is
 # These three decide whether the panel reads as glass or as a painted tile. Too
 # much blur and too much tint compound: a wide blur averages the whole panel to
 # one colour and the tint then covers what little is left, so the photograph
-# disappears and a pale rectangle is all that remains. Measured on a detailed
-# photograph, going from (32, 64, 46) to (14, 36, 18) lifts how much of the
-# picture survives behind the glass from 20.8 to 24.4 and drops the panel's
-# lightness from 101 to 79.
+# disappears and a pale rectangle is all that remains. The first version was
+# (32, 64, 46) and looked painted on; these are the values that leave enough of
+# the picture behind the panel to see it is behind the panel.
 PLATE     = 340                   # frosted tile
 PLATE_Y   = 64                    # pushed up to leave room for the name
 LOGO      = 218
@@ -100,12 +99,12 @@ def _derive():
 
 _derive()
 
-# Pillow refuses to decode anything past about 89 megapixels, on the theory that
-# a file claiming to be enormous is probably an attack. Here the file is one the
-# person running this chose off their own disk, and a 100-megapixel panorama is
-# a photograph, not an attack -- so the ceiling is raised, once, deliberately,
-# rather than left to fail with a traceback about decompression bombs. It is
-# still a ceiling: half a gigapixel would exhaust the machine.
+# Pillow warns above MAX_IMAGE_PIXELS -- about 89 megapixels by default -- and
+# refuses outright at twice that, on the theory that a file claiming to be
+# enormous is probably an attack. Here the file is one the person running this
+# chose off their own disk, and a 100-megapixel panorama is a photograph, not an
+# attack, so the ceiling is raised once, deliberately, rather than left to stop
+# the build with a DecompressionBombError. It is still a ceiling.
 Image.MAX_IMAGE_PIXELS = 512_000_000
 
 
@@ -133,15 +132,31 @@ def _font(*names):
         want = os.path.splitext(name)[0]
         family = want.replace("DejaVu", "DejaVu ").split("-")[0].strip()
         try:
-            out = subprocess.run(["fc-match", "-f", "%{file}\t%{family}", want],
+            # Ask for the style as well. "DejaVuSans-Bold" is not a family
+            # name; fontconfig reads it as one, finds nothing, and hands back
+            # DejaVu Sans regular -- which passes a family check and renders
+            # every bold label in the menu at regular weight.
+            query = "DejaVu Sans" + (":style=Bold" if "Bold" in want else "")
+            query += ":style=Book" if ("Mono" not in want and "Bold" not in want) else ""
+            if "Mono" in want:
+                query = "DejaVu Sans Mono" + (":style=Bold" if "Bold" in want else "")
+            out = subprocess.run(["fc-match", "-f", "%{file}\t%{family}\t%{style}", query],
                                  capture_output=True, text=True, timeout=5)
         except (OSError, subprocess.SubprocessError):
             continue
         if out.returncode != 0 or "\t" not in out.stdout:
             continue
-        path, _, got = out.stdout.partition("\t")
-        if os.path.exists(path.strip()) and "dejavu" in got.strip().lower():
-            return path.strip()
+        parts = out.stdout.split("\t")
+        if len(parts) < 3:
+            continue
+        path, got, style = (p.strip() for p in parts[:3])
+        if not os.path.exists(path) or "dejavu" not in got.lower():
+            continue
+        if ("Bold" in want) != ("bold" in style.lower()):
+            continue
+        if ("Mono" in want) != ("mono" in got.lower()):
+            continue
+        return path
     raise SystemExit(
         "no DejaVu font found. Install it:\n"
         "  Debian/Ubuntu   sudo apt install fonts-dejavu-core\n"
@@ -685,26 +700,34 @@ def build(background, darken, out, preview_path=None, quiet=False, blur="auto", 
 
 def read_tint(assets):
     """What rEFInd will use, read from the file rEFInd reads."""
-    # The boot menu writes UTF-16 with a byte-order mark, because that is what a
-    # UEFI program writes. A person editing the file from a text editor writes
-    # UTF-8. Both have to be readable, or changing one line by hand silently
-    # resets the colour.
+    # Decide by the byte-order mark, not by trying decoders in turn. The boot
+    # menu writes UTF-16 with a mark, because that is what a UEFI program writes;
+    # somebody editing the file by hand writes UTF-8. "Try UTF-16 first and fall
+    # back" never reaches the fallback: UTF-16 decodes almost any even-length
+    # string of bytes into something, so a hand-edited file came out as a page of
+    # CJK and the tint silently went back to 100.
     try:
         raw = open(f"{assets}/theme.conf", "rb").read()
     except OSError:
         return 100
-    for encoding in ("utf-16", "utf-8-sig", "utf-8"):
-        try:
-            text = raw.decode(encoding)
-        except (UnicodeDecodeError, UnicodeError):
-            continue
-        for line in text.replace("\r", "\n").split("\n"):
-            if line.strip().startswith("tint"):
-                try:
-                    return int(line.split()[1])
-                except (ValueError, IndexError):
-                    return 100
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        enc = "utf-16"
+    elif raw[:3] == b"\xef\xbb\xbf":
+        enc = "utf-8-sig"
+    elif len(raw) >= 2 and raw[1] == 0 and raw[0] != 0:
+        enc = "utf-16-le"
+    else:
+        enc = "utf-8"
+    try:
+        text = raw.decode(enc, "replace")
+    except (UnicodeDecodeError, UnicodeError, LookupError):
         return 100
+    for line in text.replace("\r", "\n").split("\n"):
+        if line.strip().startswith("tint"):
+            try:
+                return int(line.split()[1])
+            except (ValueError, IndexError):
+                return 100
     return 100
 
 

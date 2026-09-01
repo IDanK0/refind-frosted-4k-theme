@@ -50,16 +50,23 @@ which photograph you built it from. Build it from *Dune 45 at Sunrise* and it is
 CC BY-SA 4.0; build it from the default, *Mars Over Dunes*, and it is public
 domain.
 
-The screenshots in `screenshots/` are the exception: they are checked in, and
-built from *Mars Over Dunes*, which is public domain — except
-`screenshots/library.png`, which is the whole library side by side and therefore
-contains all six, share-alike one included.
+Two things are the exception, and both are checked in:
+
+* `screenshots/` — built from *Mars Over Dunes*, which is public domain, except
+  `library.png`, which is the whole library side by side and therefore contains
+  all six, the share-alike one included, and `windows-logo.png`, which was read
+  back off a running machine and is *Desert Skies* (CC0).
+* `library/preview-sheet.jpg` — a contact sheet of the library, so it too
+  contains all six. It is not installed on any machine; it is there so the
+  README can show what the library looks like.
 
 ## The logos
 
 `stock-icons/SOURCES.md` records, for every icon, whether it came from rEFInd's
-own SVG set or from Wikimedia Commons, and under which licence. Seventeen are
-still rEFInd's 128-pixel bitmaps because no vector of them exists anywhere.
+own SVG set or from Wikimedia Commons, and — for the ones from Commons — under
+which licence. The ones from rEFInd's own set are covered by rEFInd's licence.
+Seventeen are still rEFInd's 128-pixel bitmaps because no vector of them exists
+anywhere.
 
 Distribution logos are trademarks of their projects. They are used here only to
 name the system they belong to, which is what a boot menu is for and what every

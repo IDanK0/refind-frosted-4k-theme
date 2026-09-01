@@ -717,8 +717,8 @@ scaling is arranged to preserve. `TILE_XSPACING` is the exception, being
 `big_icon_size = 549` is **not an aesthetic choice**. The OS row is always
 centred vertically and the tool row hangs off it, so the only way to place the
 tool row *below* the baked labels — instead of on top of them — is to inflate the
-OS tile. 549 is the value that yields exactly **52 px above and 52 px below** the
-labels. The logos stay 218 px because they are drawn inside mostly-transparent
+OS tile. 549 is the smallest value that puts the tool row clear of them. The
+logos stay 218 px because they are drawn inside mostly-transparent
 549 px canvases: the tile is a bounding box, not the artwork.
 
 Two hard limits constrain it:
@@ -748,7 +748,7 @@ it. What it needs:
 
 | For | What |
 |---|---|
-| building the boot menu | a C compiler, `make`, `objcopy`, **gnu-efi** |
+| building the boot menu | a C compiler, `make`, `objcopy`, `patch`, `curl`, **gnu-efi** |
 | drawing the artwork | **Python 3** with **Pillow**, and the **DejaVu** fonts |
 | the firmware boot entry | **efibootmgr** |
 | the splash | **Plymouth**, and one of initramfs-tools, dracut or mkinitcpio |
@@ -761,13 +761,13 @@ or by hand:
 
 | | |
 |---|---|
-| Debian, Ubuntu, Mint, Pop!_OS | `build-essential gnu-efi python3-pil fonts-dejavu-core efibootmgr plymouth` |
-| Fedora | `gcc make binutils gnu-efi gnu-efi-devel python3-pillow dejavu-sans-fonts efibootmgr plymouth plymouth-plugin-script` |
-| RHEL, Rocky, Alma 9 | the Fedora list plus `gnu-efi-compat` (all three gnu-efi packages are in CRB) |
-| openSUSE | `gcc make binutils gnu-efi-devel python3-Pillow dejavu-fonts efibootmgr plymouth` |
-| Arch, Manjaro, EndeavourOS | `base-devel gnu-efi python-pillow ttf-dejavu efibootmgr plymouth` |
-| Void | `base-devel gnu-efi-libs python3-Pillow dejavu-fonts-ttf efibootmgr plymouth` |
-| Alpine | `build-base gnu-efi-dev py3-pillow font-dejavu efibootmgr plymouth` |
+| Debian, Ubuntu, Mint, Pop!_OS | `build-essential gnu-efi patch curl python3-pil fonts-dejavu-core efibootmgr plymouth` |
+| Fedora | `gcc make binutils patch curl gnu-efi gnu-efi-devel python3-pillow dejavu-sans-fonts efibootmgr plymouth plymouth-plugin-script` |
+| RHEL, Rocky, Alma 9 | the Fedora list plus `gnu-efi-compat`; `gnu-efi` is in AppStream, `gnu-efi-devel` and `gnu-efi-compat` in CRB |
+| openSUSE | `gcc make binutils gnu-efi-devel python3-Pillow dejavu-fonts efibootmgr plymouth plymouth-plugin-script` |
+| Arch, Manjaro, EndeavourOS | `base-devel gnu-efi python-pillow ttf-dejavu efibootmgr plymouth` (`base-devel` brings patch and curl) |
+| Void | `base-devel gnu-efi-libs patch curl python3-Pillow dejavu-fonts-ttf efibootmgr plymouth` |
+| Alpine | `build-base gnu-efi-dev patch curl py3-pillow font-dejavu efibootmgr plymouth` |
 
 It builds against **gnu-efi 3.x and 4.x** both. The two generations differ over
 who provides `AsciiStrLen`, which is enough to make the link fail on one of
@@ -800,10 +800,11 @@ Looking at this machine
   + firmware       64-bit UEFI
   + Secure Boot    off
   + EFI partition  /boot/efi  (/dev/nvme0n1p1)
-                   139 MB free
+                 139 MB free
   + distribution   Ubuntu 26.04 LTS  (apt)
   + initramfs      initramfs-tools
   + plymouth       installed
+                 /boot has 209662 MB free
   + screen         3840x2160
   + dependencies   all present
 ```
@@ -889,7 +890,7 @@ killed halfway through.
 
 There is a **Settings** icon in the tool row. It lists every picture sitting in
 its own `backgrounds/` directory, dims, glass, colour and animation, and writes what you
-choose to `EFI/refind/theme.conf` — which `refind.conf` includes last, so it
+choose to `theme.conf` beside the menu — which `refind.conf` includes last, so it
 wins, and deleting it brings the machine back to what was installed.
 
 Adding a photograph of your own means copying a file onto the EFI partition.
