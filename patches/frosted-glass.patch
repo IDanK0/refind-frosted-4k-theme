@@ -1059,7 +1059,7 @@ diff -urN a/refind/Makefile b/refind/Makefile
                    screen.o
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-09-01 16:28:38.221805774 +0200
++++ b/refind/menu.c	2026-09-01 17:05:44.420501212 +0200
 @@ -59,7 +59,9 @@
  #include "screen.h"
  #include "lib.h"
@@ -1216,7 +1216,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      egFreeImage(TextBuffer);
  }
  
-@@ -1074,31 +1128,404 @@
+@@ -1074,31 +1128,411 @@
  // graphical main menu style
  //
  
@@ -1254,7 +1254,14 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +#define ANIM_OUT_US      (280000)
 +#define ANIM_MOVE_FRAMES (14)     // the chosen tile travelling to the middle
 +#define ANIM_MOVE_US     (450000)
-+#define ANIM_FRAME_US    (12000)  // the shortest a frame is held: about 80 a second
++// The shortest a frame is held. Sixteen milliseconds is about sixty a second,
++// which is near enough to what a screen refreshes at that a tear line stays
++// roughly where it is instead of rolling up the picture -- a still seam being
++// far less noticeable than a moving one. There is no way to actually wait for
++// the refresh: UEFI has no notion of one, so anything moving across a
++// framebuffer can be caught half-drawn, and the only levers are how much is
++// written and how often.
++#define ANIM_FRAME_US    (16000)
 +#define ANIM_MAX_TILES   (24)
 +
 +static BOOLEAN MenuHasAppeared = FALSE;
@@ -1635,7 +1642,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      for (i = State->FirstVisible; i <= State->MaxIndex; i++) {
          if (Screen->Entries[i]->Row == 0) {
              if (i <= State->LastVisible) {
-@@ -1150,10 +1577,8 @@
+@@ -1150,10 +1584,8 @@
              XSelectCur = State->CurrentSelection;
              YPosCur = row1PosY;
          } // if/else
@@ -1648,7 +1655,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1599,387 @@
+@@ -1174,6 +1606,387 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -2036,7 +2043,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +1993,7 @@
+@@ -1187,7 +2000,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -2045,7 +2052,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2266,7 @@
+@@ -1460,7 +2273,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -2054,7 +2061,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2344,7 @@
+@@ -1538,7 +2351,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -2063,7 +2070,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2446,7 @@
+@@ -1640,7 +2453,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -2072,7 +2079,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2484,7 @@
+@@ -1678,7 +2491,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2081,7 +2088,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2506,7 @@
+@@ -1700,7 +2513,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2090,7 +2097,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2595,7 @@
+@@ -1789,7 +2602,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -2099,7 +2106,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2620,7 @@
+@@ -1814,7 +2627,7 @@
      }
  
      if (AllowGraphicsMode) {
