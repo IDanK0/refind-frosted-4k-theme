@@ -727,7 +727,7 @@ diff -urN a/refind/Makefile b/refind/Makefile
 diff -urN a/refind/bgrt.c b/refind/bgrt.c
 --- a/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/refind/bgrt.c	1970-01-01 01:00:00.000000000 +0100
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,397 @@
 +/*
 + * refind/bgrt.c
 + * Hand the picture on the screen to the next operating system.
@@ -750,8 +750,16 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 + * too, which is what makes it testable without booting Windows at all.
 + *
 + * Windows keeps drawing its own ring of dots underneath, and there is no way to
-+ * ask it not to. So what is handed over is the picture without ours: the
-+ * photograph and the tile, and Windows turns its own dots below them.
++ * ask it not to. So what is handed over is the tile alone, without our ring, and
++ * Windows turns its own dots below it.
++ *
++ * A screenful was handed over first, and Windows drew nothing at all: black, with
++ * only its own ring on it. Linux took the same table happily, which is what made
++ * it look right for so long. Every firmware in the field writes a small logo here
++ * and Windows is built for that, so this writes a small one too: the icon on
++ * black, at the pixels it already occupied. Windows paints black behind it, so
++ * the margins do not show. A crop of the screen would have carried a rectangle of
++ * photograph, which on a black screen reads as a sticker.
 + */
 +
 +#include "global.h"
@@ -1018,15 +1026,69 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +    return Bmp;
 +} // UINT8 * MakeBmp()
 +
++
++// Which kind of memory an address falls in, as the firmware's own map describes
++// it. The number is the EFI memory type: 4 is EfiBootServicesData, which the
++// operating system may take back the moment boot services end; 9 is
++// EfiACPIMemoryNVS and 0 is EfiReservedMemoryType, which it may not. A logo the
++// next system cannot still read when it looks is a logo it will not draw.
++static INTN MemoryTypeAt(IN UINT64 Addr) {
++    EFI_MEMORY_DESCRIPTOR *Map = NULL, *Desc;
++    UINTN       MapSize = 0, MapKey = 0, DescSize = 0, i, Count;
++    UINT32      DescVersion = 0;
++    EFI_STATUS  Status;
++    INTN        Type = -1;
++
++    Status = refit_call5_wrapper(BS->GetMemoryMap, &MapSize, Map, &MapKey,
++                                 &DescSize, &DescVersion);
++    if ((Status != EFI_BUFFER_TOO_SMALL) || (DescSize == 0))
++        return -1;
++    MapSize += 8 * DescSize;            // the map grows as this allocation is made
++    Map = AllocatePool(MapSize);
++    if (Map == NULL)
++        return -1;
++    Status = refit_call5_wrapper(BS->GetMemoryMap, &MapSize, Map, &MapKey,
++                                 &DescSize, &DescVersion);
++    if (!EFI_ERROR(Status)) {
++        Count = MapSize / DescSize;
++        for (i = 0; i < Count; i++) {
++            Desc = (EFI_MEMORY_DESCRIPTOR *) ((UINT8 *) Map + i * DescSize);
++            if ((Addr >= Desc->PhysicalStart) &&
++                (Addr <  Desc->PhysicalStart + (((UINT64) Desc->NumberOfPages) << 12))) {
++                Type = (INTN) Desc->Type;
++                break;
++            }
++        }
++    }
++    MyFreePool(Map);
++    return Type;
++} // INTN MemoryTypeAt()
++
++// What the firmware left here, recorded on every boot whether or not this is
++// about to write over it. When one machine shows its own logo and not ours, the
++// answer is the difference between this line and the next one.
++static VOID LogFirmwareLogo(IN UINT8 *Bgrt) {
++    UINT64 Was = (UINT64) ReadU32(Bgrt + BGRT_IMAGE_ADDRESS) |
++                 ((UINT64) ReadU32(Bgrt + BGRT_IMAGE_ADDRESS + 4) << 32);
++    UINT8 *Old = (UINT8 *) (UINTN) Was;
++
++    if ((Was != 0) && (Old[0] == 'B') && (Old[1] == 'M')) {
++        LOG(1, LOG_LINE_NORMAL,
++            L"Firmware logo: %d x %d at %d,%d, status 0x%02x, memory type %d, 0x%lx",
++            (INTN) ReadU32(Old + 18), (INTN) ReadU32(Old + 22),
++            (INTN) ReadU32(Bgrt + BGRT_OFFSET_X), (INTN) ReadU32(Bgrt + BGRT_OFFSET_Y),
++            (INTN) Bgrt[BGRT_STATUS], MemoryTypeAt(Was), Was);
++    } else {
++        LOG(1, LOG_LINE_NORMAL, L"Firmware left no readable logo at 0x%lx", Was);
++    }
++} // VOID LogFirmwareLogo()
++
 +// Put Image where the firmware put its own logo, so whatever boots next shows
 +// it. Silent and harmless when there is no table to write to: a machine whose
 +// firmware publishes no BGRT simply keeps the boot screen it always had.
-+VOID SetBootLogo(IN EG_IMAGE *Image) {
++VOID SetBootLogo(IN EG_IMAGE *Image, IN UINTN OffsetX, IN UINTN OffsetY) {
 +    UINT8 *Bgrt, *Bmp;
 +    UINTN  Size = 0;
-+
-+    if (!GlobalConfig.BgrtLogo || (Image == NULL))
-+        return;
 +
 +    Bgrt = FindBgrt();
 +    if (Bgrt == NULL) {
@@ -1038,22 +1100,29 @@ diff -urN a/refind/bgrt.c b/refind/bgrt.c
 +        return;
 +    }
 +
++    LogFirmwareLogo(Bgrt);
++
++    if (!GlobalConfig.BgrtLogo || (Image == NULL))
++        return;
++
 +    Bmp = MakeBmp(Image, &Size);
 +    if (Bmp == NULL)
 +        return;
 +
 +    WriteU64(Bgrt + BGRT_IMAGE_ADDRESS, (UINT64) (UINTN) Bmp);
-+    WriteU32(Bgrt + BGRT_OFFSET_X, 0);      // the picture is the whole screen
-+    WriteU32(Bgrt + BGRT_OFFSET_Y, 0);
++    WriteU32(Bgrt + BGRT_OFFSET_X, (UINT32) OffsetX);
++    WriteU32(Bgrt + BGRT_OFFSET_Y, (UINT32) OffsetY);
 +    Bgrt[BGRT_IMAGE_TYPE] = 0;              // 0 means BMP, and 0 is all there is
 +    // bit 0 says it is displayed; bits 1 and 2 are a rotation the firmware asked
-+    // for, which applied to its own small logo and must not be applied to a
-+    // picture that is already the shape of the screen.
++    // for on its own logo. Ours is drawn the way up the screen already is, so the
++    // rotation is cleared rather than inherited.
 +    Bgrt[BGRT_STATUS] = (UINT8) ((Bgrt[BGRT_STATUS] & ~((UINT8) 0x06)) | 0x01);
 +    Reseal(Bgrt);
 +
-+    LOG(1, LOG_LINE_NORMAL, L"Boot logo handed on: %d x %d, %d KB at 0x%lx",
-+        (INTN) Image->Width, (INTN) Image->Height, (INTN) (Size / 1024),
++    LOG(1, LOG_LINE_NORMAL,
++        L"Boot logo handed on: %d x %d at %d,%d, %d KB, memory type %d, 0x%lx",
++        (INTN) Image->Width, (INTN) Image->Height, (INTN) OffsetX, (INTN) OffsetY,
++        (INTN) (Size / 1024), MemoryTypeAt((UINT64) (UINTN) Bmp),
 +        (UINT64) (UINTN) Bmp);
 +} // VOID SetBootLogo()
 diff -urN a/refind/bgrt.h b/refind/bgrt.h
@@ -1071,7 +1140,7 @@ diff -urN a/refind/bgrt.h b/refind/bgrt.h
 +#include "global.h"
 +#include "../libeg/libeg.h"
 +
-+VOID SetBootLogo(IN EG_IMAGE *Image);
++VOID SetBootLogo(IN EG_IMAGE *Image, IN UINTN OffsetX, IN UINTN OffsetY);
 +
 +#endif
 diff -urN a/refind/config.c b/refind/config.c
@@ -1293,7 +1362,7 @@ diff -urN a/refind/main.c b/refind/main.c
                     MainLoopRunning = FALSE;   // just in case we get this far
 diff -urN a/refind/menu.c b/refind/menu.c
 --- a/refind/menu.c	2024-04-06 20:26:04.000000000 +0200
-+++ b/refind/menu.c	2026-09-02 00:26:50.977475322 +0200
++++ b/refind/menu.c	2026-09-02 14:46:59.556157835 +0200
 @@ -59,7 +59,9 @@
  #include "screen.h"
  #include "lib.h"
@@ -1971,7 +2040,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
          if (!(GlobalConfig.HideUIFlags & HIDEUI_FLAG_LABEL) && (!PointerActive || (PointerActive && DrawSelection))) {
              DrawTextWithTransparency(L"", 0, textPosY);
              DrawTextWithTransparency(Screen->Entries[State->CurrentSelection]->Title,
-@@ -1174,6 +1688,416 @@
+@@ -1174,6 +1688,439 @@
      return egPrepareEmbeddedImage(BuiltInIcon, TRUE);
  }
  
@@ -2327,15 +2396,38 @@ diff -urN a/refind/menu.c b/refind/menu.c
 +        }
 +    }
 +
-+    // Hand the picture to whatever boots next.
++    // Hand the entry to whatever boots next.
 +    //
-+    // Taken now, with the tile in place and before the ring starts, because the
-+    // system that receives it draws its own ring and cannot be asked not to:
-+    // two of them turning at once is worse than one of them being Windows'.
-+    if (GlobalConfig.BgrtLogo) {
-+        EG_IMAGE *Whole = egCopyScreen();
-+        SetBootLogo(Whole);
-+        egFreeImage(Whole);
++    // Taken now, before the ring starts, because the system that receives it draws
++    // its own ring and cannot be asked not to: two of them turning at once is
++    // worse than one of them being Windows'.
++    //
++    // The icon on black, not a crop of the screen. Windows paints its boot screen
++    // black and puts this on top, so black margins are invisible and a rectangle
++    // of photograph would not be: it would read as a sticker of the desert stuck
++    // to the middle of the screen. What travels is the plate and the name, landing
++    // on the same pixels they occupied a moment earlier.
++    if (!GlobalConfig.BgrtLogo || (Icon == NULL)) {
++        // still worth a look: this records what the firmware left, which is the
++        // only thing that says what this machine's next system will accept
++        SetBootLogo(NULL, 0, 0);
++    } else {
++        EG_PIXEL  Black = { 0x0, 0x0, 0x0, 0 };
++        EG_IMAGE *Logo  = egCreateFilledImage(Icon->Width, Icon->Height, TRUE, &Black);
++
++        if (Logo != NULL) {
++            UINTN IconX = TileX, IconY = (UINTN) TileY;
++
++            // centred in the tile the way ComposeTile centres it
++            if (TileSizes[0] > Icon->Width)
++                IconX += (TileSizes[0] - Icon->Width) / 2;
++            if (TileSizes[0] > Icon->Height)
++                IconY += (TileSizes[0] - Icon->Height) / 2;
++
++            egComposeImage(Logo, Icon, 0, 0);
++            SetBootLogo(Logo, IconX, IconY);
++            egFreeImage(Logo);
++        }
 +    }
 +
 +    // the ring
@@ -2388,7 +2480,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  UINTN ComputeRow0PosY(VOID) {
      return ((UGAHeight / 2) - TileSizes[0] / 2);
  } // UINTN ComputeRow0PosY()
-@@ -1187,7 +2111,7 @@
+@@ -1187,7 +2134,7 @@
  // PosY is specified as the center value, PosX is left aligned.
  static VOID PaintArrow(EG_IMAGE * Arrow, UINTN PosX, UINTN PosY, BOOLEAN visible) {
      UINTN TopY = PosY - (Arrow->Height / 2);
@@ -2397,7 +2489,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      else ClearWithBackground(PosX, TopY, Arrow->Width, Arrow->Height);
  }
  
-@@ -1460,7 +2384,7 @@
+@@ -1460,7 +2407,7 @@
          return;
  
      if (AllowGraphicsMode)
@@ -2406,7 +2498,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_ABOUT);
      HideItemMenu.Title = Title;
      AddMenuInfoLine(&HideItemMenu, Message);
-@@ -1538,7 +2462,7 @@
+@@ -1538,7 +2485,7 @@
      LOG(1, LOG_LINE_SEPARATOR, L"Managing hidden tags");
      HideItemMenu.TitleImage = BuiltinIcon(BUILTIN_ICON_FUNC_HIDDEN);
      if (AllowGraphicsMode)
@@ -2415,7 +2507,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      HiddenTags = ReadHiddenTags(L"HiddenTags");
      SaveTags = RemoveInvalidFilenames(HiddenTags, L"HiddenTags");
-@@ -1640,7 +2564,7 @@
+@@ -1640,7 +2587,7 @@
          return FALSE;
  
      if (AllowGraphicsMode)
@@ -2424,7 +2516,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if (Loader->Volume->VolName && (StrLen(Loader->Volume->VolName) > 0)) {
          FullPath = StrDuplicate(Loader->Volume->VolName);
-@@ -1678,7 +2602,7 @@
+@@ -1678,7 +2625,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2433,7 +2525,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      AddMenuInfoLine(HideItemMenu, PoolPrint(L"Really hide '%s'?", Loader->Title));
      AddMenuEntry(HideItemMenu, &MenuEntryYes);
-@@ -1700,7 +2624,7 @@
+@@ -1700,7 +2647,7 @@
      BOOLEAN            TagHidden = FALSE;
  
      if (AllowGraphicsMode)
@@ -2442,7 +2534,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      if ((GlobalConfig.LegacyType == LEGACY_TYPE_MAC) && LegacyLoader->me.Title)
          Name = StrDuplicate(LegacyLoader->me.Title);
-@@ -1789,7 +2713,7 @@
+@@ -1789,7 +2736,7 @@
  
      LOG(2, LOG_LINE_NORMAL, L"Entering RunMenu()");
      if (AllowGraphicsMode)
@@ -2451,7 +2543,7 @@ diff -urN a/refind/menu.c b/refind/menu.c
  
      return RunGenericMenu(Screen, Style, &DefaultEntry, ChosenEntry);
  }
-@@ -1814,7 +2738,7 @@
+@@ -1814,7 +2761,7 @@
      }
  
      if (AllowGraphicsMode) {
