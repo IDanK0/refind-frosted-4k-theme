@@ -576,8 +576,10 @@ def check_for_update(apply_it, dry):
     here = version_of(checkout)
 
     # This is meant to run as the person who owns the checkout, from their own
-    # user timer, because that is where the credentials for a private repository
-    # are. Run as anyone else it will simply fail to authenticate, and say so.
+    # user timer. A public remote needs no credentials, but a private one is
+    # reached only from the keyring of whoever cloned it, and root has no keyring
+    # to ask. Run as anyone else against a private remote it fails to
+    # authenticate, and says so rather than failing quietly.
     def git(*args, timeout=120):
         env = dict(os.environ)
         env["GIT_TERMINAL_PROMPT"] = "0"          # never sit waiting for a password
