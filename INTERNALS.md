@@ -463,9 +463,9 @@ Windows boot and not a Windows one.
 
 A bootloader is the last thing to run before the operating system, so it is the
 last thing that can write to that table. `bgrt.c` finds it through the root
-pointer in the EFI configuration table, writes the screen there as a full-screen
-24-bit bitmap in boot-services memory (where firmware puts its own, and the only
-kind Linux will accept), and reseals the table's checksum. Nothing is installed
+pointer in the EFI configuration table, writes the chosen entry's icon there on
+black as a 24-bit bitmap in boot-services memory (where firmware puts its own,
+and the only kind Linux will accept), and reseals the table's checksum. Nothing is installed
 inside Windows, nothing has to survive Windows being reinstalled, and there is
 nothing there to break.
 
@@ -473,18 +473,32 @@ The picture is taken with the tile in place and *before* the ring starts,
 because Windows draws its own ring of dots underneath and cannot be asked not
 to. One ring is better than two, even when the one you keep is Windows'.
 
-It is testable without booting Windows at all, which is as far as the testing
-here has gone. Linux reads the same table, so after a Linux boot
-`/sys/firmware/acpi/bgrt/status` is 1, the type is 0, the offsets are 0,0 and
-`/sys/firmware/acpi/bgrt/image` is exactly the bitmap that was handed over. That
-proves the table is well formed and that an operating system accepts it. It does
-not prove Windows draws it; nobody has booted Windows to look. HackBGRT has been
-doing the same thing to the same table for years and asks for the same 24-bit
-BMP with a 54-byte header, which is the reason to expect it works.
+Linux reads the same table, so it is testable without booting Windows at all:
+after a Linux boot `/sys/firmware/acpi/bgrt/status` is 1, the type is 0, the
+offsets are where the icon was drawn and `/sys/firmware/acpi/bgrt/image` is
+exactly the bitmap that was handed over. The table checksum is right too; its
+fifty-six bytes sum to zero.
 
-This is that file, read back off a running system:
+Then Windows was booted, and drew nothing but its own ring.
 
-![What the next system is handed](screenshots/windows-logo.png)
+Three things were suspected and each was measured instead of guessed at. Size:
+the log records the firmware's own logo as 293x400 and ours as 549x549, both
+small, both inside the screen. The table: its checksum is valid and every field
+reads back correctly. The memory: `MemoryTypeAt()` asks the firmware's own map,
+and the firmware keeps its logo in type 4, `EfiBootServicesData`, which is where
+this puts ours.
+
+What settled it was turning `bgrt_logo` off and leaving the firmware's logo in
+the table untouched, 293x400 at 1773,625, status 1. Windows drew nothing that
+time either. So Windows on this machine does not draw BGRT logos at all, its own
+manufacturer's included, and nothing a bootloader writes to that table will
+change it. HackBGRT has been doing the same thing to the same table for years
+and asks for the same 24-bit BMP with a 54-byte header, which is the reason to
+expect it works where Windows reads it. That machine has not been found yet.
+
+This is the bitmap, at the size and position it is written:
+
+![What the next system is handed](screenshots/windows-handoff.png)
 
 Two attempts were needed and the machine explained both. The first put the
 bitmap in memory that is never reclaimed, reasoning that it had to survive into

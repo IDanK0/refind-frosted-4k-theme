@@ -240,7 +240,7 @@ eight of them, pushed through the framebuffer before anything is on it: on a rea
 machine that is the slow wipe from top to bottom. The menu's own entrance, which
 is the part you actually watch, is unaffected either way.
 
-`bgrt_logo` (true) hands the screen to the system that boots next.
+`bgrt_logo` (true) hands the chosen entry's icon to the system that boots next.
 
 Windows does not choose the picture it shows while it starts: it reads one out
 of an ACPI table called BGRT, which the firmware fills in with the maker's logo,
@@ -250,20 +250,21 @@ so it is the last thing that can write to that table. Nothing is installed
 inside Windows, nothing has to survive Windows being reinstalled, and the same
 picture reaches anything else that reads the table.
 
-The handover is verified through Linux, not through Windows: after a Linux boot
+The handover is verified through Linux: after a Linux boot
 `/sys/firmware/acpi/bgrt/image` holds the bitmap that was written, which shows
-the table is correct and that an operating system accepts it. Nobody has booted
-Windows here to watch it draw. HackBGRT has been replacing the Windows boot logo
-through this table for years and wants the same 24-bit BMP, so there is good
-reason to expect it, but expect is the honest word.
+the table is correct and that an operating system accepts it. Windows was then
+booted and drew nothing but its own ring, and it did the same with `bgrt_logo`
+off and the firmware's own logo left in the table. That machine's Windows does
+not draw BGRT logos at all. Where Windows does read the table this should work,
+since HackBGRT has been replacing the boot logo through it for years and wants
+the same 24-bit BMP, but that is expectation, not a test.
 
 Windows keeps turning its own ring of dots underneath and cannot be asked not
-to, so what is handed over is the picture *without* ours: the photograph and the
-tile, with Windows' dots below them. It costs about 25 MB of boot-services
-memory, being a full-screen 24-bit bitmap, which the system reserves for itself
-once it has read it. `false` leaves the
-firmware's own logo alone, and a machine whose firmware publishes no BGRT keeps
-the boot screen it always had.
+to, so what is handed over carries no ring: the entry's icon on black, at the
+pixels it occupied in the menu, with Windows' dots below it. Under a megabyte of
+boot-services memory, which the system reclaims once it has read it. `false`
+leaves the firmware's own logo alone, and a machine whose firmware publishes no
+BGRT keeps the boot screen it always had.
 
 `entrance_delay` (800) is how many milliseconds to wait, after the photograph is
 up, before the menu arrives. A monitor takes a second or two to lock onto a

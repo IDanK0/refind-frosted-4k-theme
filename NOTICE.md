@@ -54,8 +54,9 @@ Two things are the exception, and both are checked in:
 
 * `screenshots/`, built from *Mars Over Dunes*, which is public domain, except
   `library.png`, which is the whole library side by side and therefore contains
-  all six, the share-alike one included, and `windows-logo.png`, which was read
-  back off a running machine and is *Desert Skies* (CC0).
+  all six, the share-alike one included. `windows-handoff.png` carries no
+  photograph at all: it is the icon on black, and the only thing it takes from a
+  picture is the colour it is tinted with.
 * `library/preview-sheet.jpg`, a contact sheet of the library, so it too
   contains all six. It is not installed on any machine; it is there so the
   README can show what the library looks like.
