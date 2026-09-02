@@ -179,9 +179,9 @@ echo "      replaces the binary in $ESP, which is only right if that is already 
 # carrying "frost_radius"; saving that as the fallback would defeat the point.
 FROST=$(printf 'frost_radius' | sed 's/./&\\x00/g')
 BACKUP=""
-for c in "$ESP"/refind_x64.efi.stock "$ESP"/refind_x64.efi.pacchetto; do
-    [ -f "$c" ] && { BACKUP="$c"; break; }
-done
+if [ -f "$ESP/refind_x64.efi.stock" ]; then
+    BACKUP="$ESP/refind_x64.efi.stock"
+fi
 if [ -z "$BACKUP" ]; then
     if grep -qaP "$FROST" "$ESP/refind_x64.efi"; then
         echo "Note: the installed binary is already patched, and there is no"
